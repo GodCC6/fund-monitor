@@ -42,12 +42,17 @@ async def setup_fund(fund_code: str, db: AsyncSession = Depends(get_db)):
     if not holdings:
         holdings = market_data_service.get_fund_holdings(fund_code, str(int(year) - 1))
 
+    # Get fund name and type
+    basic_info = market_data_service.get_fund_basic_info(fund_code)
+    fund_name = basic_info["fund_name"] if basic_info else f"Fund-{fund_code}"
+    fund_type = basic_info["fund_type"] if basic_info else "未知"
+
     # Save fund
     fund = await fund_info_service.add_fund(
         db,
         fund_code=fund_code,
-        fund_name=f"Fund-{fund_code}",  # Will be updated when we have name
-        fund_type="未知",
+        fund_name=fund_name,
+        fund_type=fund_type,
         last_nav=nav_data["nav"],
         nav_date=nav_data["nav_date"],
     )
