@@ -63,6 +63,19 @@ export interface IntradayData {
   navs: number[]
 }
 
+export interface IndexHistoryData {
+  dates: string[]
+  values: number[]
+  name: string
+}
+
+export interface IndexIntradayData {
+  times: string[]
+  values: number[]
+  pre_close: number
+  name: string
+}
+
 export const api = {
   getFund: (code: string) => request<FundInfo>(`/api/fund/${code}`),
 
@@ -96,4 +109,10 @@ export const api = {
 
   getIntraday: (code: string) =>
     request<IntradayData>(`/api/fund/${code}/intraday`),
+
+  getIndexHistory: (period: string) =>
+    request<IndexHistoryData>(`/api/fund/index/history?period=${period}`),
+
+  getIndexIntraday: () =>
+    request<IndexIntradayData>('/api/fund/index/intraday'),
 }

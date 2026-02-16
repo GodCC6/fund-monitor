@@ -6,11 +6,12 @@ import {
   GridComponent,
   TooltipComponent,
   DataZoomComponent,
+  LegendComponent,
 } from 'echarts/components'
 import { CanvasRenderer } from 'echarts/renderers'
 import { api } from '../api'
 
-echarts.use([LineChart, GridComponent, TooltipComponent, DataZoomComponent, CanvasRenderer])
+echarts.use([LineChart, GridComponent, TooltipComponent, DataZoomComponent, LegendComponent, CanvasRenderer])
 
 const props = defineProps<{ fundCode: string }>()
 
@@ -42,55 +43,142 @@ function disposeChart() {
   }
 }
 
+interface ChartData {
+  xData: string[]
+  fundNavs: number[]
+  indexValues: number[]
+  indexName: string
+}
+
 async function loadData() {
   loading.value = true
   empty.value = false
 
   try {
-    let xData: string[] = []
-    let yData: number[] = []
+    let chartData: ChartData
 
     if (activePeriod.value === '1d') {
-      const data = await api.getIntraday(props.fundCode)
-      xData = data.times
-      yData = data.navs
-    } else {
-      const data = await api.getNavHistory(props.fundCode, activePeriod.value)
-      xData = data.dates
-      yData = data.navs
-    }
+      const [fundData, indexData] = await Promise.all([
+        api.getIntraday(props.fundCode),
+        api.getIndexIntraday(),
+      ])
 
-    if (xData.length === 0) {
-      empty.value = true
-      if (chart) chart.clear()
-      return
+      // Use index times as X axis, map fund snapshots to nearest minute
+      const fundMap = new Map<string, number>()
+      for (let i = 0; i < fundData.times.length; i++) {
+        const t = fundData.times[i]!
+        fundMap.set(t, fundData.navs[i]!)
+      }
+
+      const xData: string[] = []
+      const fundNavs: number[] = []
+      const indexValues: number[] = []
+      let lastFundNav = fundData.last_nav
+
+      for (let i = 0; i < indexData.times.length; i++) {
+        const t = indexData.times[i]!
+        xData.push(t)
+        indexValues.push(indexData.values[i]!)
+        if (fundMap.has(t)) {
+          lastFundNav = fundMap.get(t)!
+        }
+        fundNavs.push(lastFundNav)
+      }
+
+      if (fundData.times.length === 0 && indexData.times.length === 0) {
+        empty.value = true
+        if (chart) chart.clear()
+        loading.value = false
+        return
+      }
+
+      chartData = { xData, fundNavs, indexValues, indexName: indexData.name }
+    } else {
+      const [fundData, indexData] = await Promise.all([
+        api.getNavHistory(props.fundCode, activePeriod.value),
+        api.getIndexHistory(activePeriod.value),
+      ])
+
+      if (fundData.dates.length === 0) {
+        empty.value = true
+        if (chart) chart.clear()
+        loading.value = false
+        return
+      }
+
+      // Align dates — use fund dates as base, find matching index values
+      const indexMap = new Map<string, number>()
+      for (let i = 0; i < indexData.dates.length; i++) {
+        indexMap.set(indexData.dates[i]!, indexData.values[i]!)
+      }
+
+      const xData: string[] = []
+      const fundNavs: number[] = []
+      const indexValues: number[] = []
+      let lastIndex = indexData.values.length > 0 ? indexData.values[0]! : 0
+
+      for (let i = 0; i < fundData.dates.length; i++) {
+        const d = fundData.dates[i]!
+        xData.push(d)
+        fundNavs.push(fundData.navs[i]!)
+        if (indexMap.has(d)) {
+          lastIndex = indexMap.get(d)!
+        }
+        indexValues.push(lastIndex)
+      }
+
+      chartData = { xData, fundNavs, indexValues, indexName: indexData.name }
     }
 
     await nextTick()
     initChart()
     if (!chart) return
 
-    const isGain = (yData[yData.length - 1] ?? 0) >= (yData[0] ?? 0)
-    const color = isGain ? '#ff4444' : '#00c853'
-    const areaColor = isGain ? 'rgba(255,68,68,0.12)' : 'rgba(0,200,83,0.12)'
+    // Normalize to percentage change from start
+    const fundBase = chartData.fundNavs[0] ?? 1
+    const indexBase = chartData.indexValues[0] ?? 1
+    const fundPcts = chartData.fundNavs.map(v => fundBase !== 0 ? (v / fundBase - 1) * 100 : 0)
+    const indexPcts = chartData.indexValues.map(v => indexBase !== 0 ? (v / indexBase - 1) * 100 : 0)
+
+    const lastFundPct = fundPcts[fundPcts.length - 1] ?? 0
+    const isGain = lastFundPct >= 0
+    const fundColor = isGain ? '#ff4444' : '#00c853'
+    const fundAreaColor = isGain ? 'rgba(255,68,68,0.08)' : 'rgba(0,200,83,0.08)'
+    const indexColor = '#1677ff'
 
     chart.setOption({
       tooltip: {
         trigger: 'axis',
         formatter: (params: any) => {
-          const p = params[0]
-          return `${p.axisValue}<br/>净值: <b>${p.data.toFixed(4)}</b>`
+          const time = params[0]?.axisValue || ''
+          let html = `<div style="font-size:12px;color:#666;margin-bottom:4px">${time}</div>`
+          for (const p of params) {
+            const dot = `<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${p.color};margin-right:4px"></span>`
+            if (p.seriesIndex === 0) {
+              const nav = chartData.fundNavs[p.dataIndex] ?? 0
+              html += `<div>${dot}基金净值: ${nav.toFixed(4)} (${p.data >= 0 ? '+' : ''}${p.data.toFixed(2)}%)</div>`
+            } else {
+              const val = chartData.indexValues[p.dataIndex] ?? 0
+              html += `<div>${dot}${chartData.indexName}: ${val.toFixed(2)} (${p.data >= 0 ? '+' : ''}${p.data.toFixed(2)}%)</div>`
+            }
+          }
+          return html
         },
       },
+      legend: {
+        data: ['基金净值', chartData.indexName],
+        top: 0,
+        textStyle: { fontSize: 12 },
+      },
       grid: {
-        left: 60,
+        left: 50,
         right: 16,
-        top: 16,
+        top: 30,
         bottom: activePeriod.value === '1d' ? 30 : 50,
       },
       xAxis: {
         type: 'category',
-        data: xData,
+        data: chartData.xData,
         axisLabel: {
           fontSize: 11,
           color: '#999',
@@ -101,21 +189,33 @@ async function loadData() {
       },
       yAxis: {
         type: 'value',
-        scale: true,
+        axisLabel: {
+          fontSize: 11,
+          color: '#999',
+          formatter: '{value}%',
+        },
         splitLine: { lineStyle: { color: '#f5f5f5' } },
-        axisLabel: { fontSize: 11, color: '#999' },
       },
       dataZoom: activePeriod.value === '1d' ? [] : [
         { type: 'inside', start: 0, end: 100 },
       ],
       series: [
         {
+          name: '基金净值',
           type: 'line',
-          data: yData,
+          data: fundPcts,
           smooth: true,
           symbol: 'none',
-          lineStyle: { color, width: 2 },
-          areaStyle: { color: areaColor },
+          lineStyle: { color: fundColor, width: 2 },
+          areaStyle: { color: fundAreaColor },
+        },
+        {
+          name: chartData.indexName,
+          type: 'line',
+          data: indexPcts,
+          smooth: true,
+          symbol: 'none',
+          lineStyle: { color: indexColor, width: 1.5, type: 'dashed' },
         },
       ],
     }, true)
