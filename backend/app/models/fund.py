@@ -31,3 +31,14 @@ class FundHolding(Base):
     updated_at: Mapped[str] = mapped_column(
         String(30), default=lambda: datetime.now().isoformat()
     )
+
+
+class FundEstimateSnapshot(Base):
+    __tablename__ = "fund_estimate_snapshot"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    fund_code: Mapped[str] = mapped_column(String(10), index=True)
+    est_nav: Mapped[float] = mapped_column(Float)
+    est_change_pct: Mapped[float] = mapped_column(Float)
+    snapshot_time: Mapped[str] = mapped_column(String(5))  # "HH:MM"
+    snapshot_date: Mapped[str] = mapped_column(String(10))  # "YYYY-MM-DD"
