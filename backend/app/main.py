@@ -1,9 +1,20 @@
 """FastAPI application entry point."""
 
+from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from app.models.database import init_db
+from app.api.fund import router as fund_router
+from app.api.portfolio_routes import router as portfolio_router
 
-app = FastAPI(title="Fund Monitor", version="0.1.0")
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    await init_db()
+    yield
+
+
+app = FastAPI(title="Fund Monitor", version="0.1.0", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
@@ -12,6 +23,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+app.include_router(fund_router)
+app.include_router(portfolio_router)
 
 
 @app.get("/api/health")
