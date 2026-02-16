@@ -6,12 +6,15 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.models.database import init_db
 from app.api.fund import router as fund_router
 from app.api.portfolio_routes import router as portfolio_router
+from app.tasks.scheduler import start_scheduler, stop_scheduler
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await init_db()
+    start_scheduler()
     yield
+    stop_scheduler()
 
 
 app = FastAPI(title="Fund Monitor", version="0.1.0", lifespan=lifespan)
