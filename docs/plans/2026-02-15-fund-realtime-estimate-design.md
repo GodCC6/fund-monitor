@@ -160,26 +160,70 @@ fund-monitor/
 │   ├── app/
 │   │   ├── main.py              # FastAPI 入口
 │   │   ├── api/                  # API 路由
+│   │   │   ├── fund.py           # 基金相关端点
+│   │   │   ├── portfolio_routes.py # 组合相关端点
+│   │   │   ├── search.py         # 基金搜索/初始化
+│   │   │   └── schemas.py        # Pydantic 模型
 │   │   ├── models/               # 数据模型
+│   │   │   ├── database.py       # SQLAlchemy 引擎/会话
+│   │   │   ├── fund.py           # Fund/FundHolding 模型
+│   │   │   └── portfolio.py      # Portfolio/PortfolioFund 模型
 │   │   ├── services/             # 业务逻辑
-│   │   │   ├── market_data.py    # 行情采集
+│   │   │   ├── market_data.py    # 行情采集 (akshare)
 │   │   │   ├── estimator.py      # 估值计算引擎
-│   │   │   ├── fund_info.py      # 基金信息管理
-│   │   │   └── portfolio.py      # 组合管理
+│   │   │   ├── fund_info.py      # 基金信息 CRUD
+│   │   │   ├── portfolio.py      # 组合管理
+│   │   │   └── cache.py          # 内存 TTL 缓存
 │   │   ├── tasks/                # 定时任务
+│   │   │   └── scheduler.py      # APScheduler 行情刷新
 │   │   └── config.py             # 配置
 │   ├── requirements.txt
-│   └── tests/
-├── frontend/                     # uni-app 项目
+│   └── tests/                    # 42 个测试
+├── frontend/                     # Vue3 + Vite + TypeScript
 │   ├── src/
-│   │   ├── pages/
-│   │   │   ├── index/            # 首页
-│   │   │   ├── portfolio/        # 组合详情
-│   │   │   ├── fund-detail/      # 基金详情
-│   │   │   └── settings/         # 设置
-│   │   ├── components/
-│   │   ├── api/
-│   │   └── store/
+│   │   ├── views/
+│   │   │   ├── Home.vue          # 组合概览
+│   │   │   ├── PortfolioDetail.vue # 组合详情
+│   │   │   └── FundDetail.vue    # 基金详情
+│   │   ├── api/index.ts          # API 调用封装
+│   │   └── router/index.ts       # 路由配置
 │   └── ...
 └── docs/
 ```
+
+## 9. 快速启动
+
+### 后端
+
+```bash
+cd backend
+pip install -r requirements.txt
+uvicorn app.main:app --reload --port 8000
+```
+
+后端启动后可访问 http://localhost:8000/docs 查看 API 文档。
+
+### 前端
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+前端开发服务器默认在 http://localhost:5173。
+
+### 运行测试
+
+```bash
+cd backend
+python -m pytest tests/ -v
+```
+
+### 使用流程
+
+1. 启动后端服务
+2. 通过 `POST /api/fund/setup/{基金代码}` 初始化要监控的基金（自动从 akshare 获取数据）
+3. 创建组合 `POST /api/portfolio`
+4. 向组合添加基金 `POST /api/portfolio/{id}/funds`
+5. 打开前端页面查看实时估值
