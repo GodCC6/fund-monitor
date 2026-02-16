@@ -51,6 +51,18 @@ export interface PortfolioDetail {
   total_profit_pct: number
 }
 
+export interface NavHistoryData {
+  dates: string[]
+  navs: number[]
+}
+
+export interface IntradayData {
+  date: string
+  last_nav: number
+  times: string[]
+  navs: number[]
+}
+
 export const api = {
   getFund: (code: string) => request<FundInfo>(`/api/fund/${code}`),
 
@@ -78,4 +90,10 @@ export const api = {
     request<unknown>(`/api/portfolio/${id}/funds/${fundCode}`, { method: 'DELETE' }),
 
   setupFund: (code: string) => request<unknown>(`/api/fund/setup/${code}`, { method: 'POST' }),
+
+  getNavHistory: (code: string, period: string) =>
+    request<NavHistoryData>(`/api/fund/${code}/nav-history?period=${period}`),
+
+  getIntraday: (code: string) =>
+    request<IntradayData>(`/api/fund/${code}/intraday`),
 }

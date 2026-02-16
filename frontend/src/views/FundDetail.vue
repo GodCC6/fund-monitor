@@ -2,6 +2,7 @@
 import { ref, onMounted, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { api, type FundInfo, type FundEstimate } from '../api'
+import NavChart from '../components/NavChart.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -92,6 +93,9 @@ onMounted(load)
           <span>{{ (estimate.coverage * 100).toFixed(1) }}%</span>
         </div>
       </div>
+
+      <!-- NAV Chart -->
+      <NavChart :fund-code="fundCode" />
 
       <!-- Holdings breakdown -->
       <div v-if="estimate.details.length > 0" class="holdings">
