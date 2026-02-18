@@ -50,8 +50,17 @@ class PortfolioResponse(BaseModel):
 
 class PortfolioFundResponse(BaseModel):
     fund_code: str
+    fund_name: str
     shares: float
     cost_nav: float
+    est_nav: float
+    est_change_pct: float
+    cost: float
+    current_value: float
+    profit: float
+    profit_pct: float
+    coverage: float
+    holdings_date: str | None = None
 
 
 class PortfolioDetailResponse(BaseModel):
