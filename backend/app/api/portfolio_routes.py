@@ -50,12 +50,18 @@ async def get_portfolio_detail(portfolio_id: int, db: AsyncSession = Depends(get
 
     for pf in pf_list:
         fund = await fund_info_service.get_fund(db, pf.fund_code)
-        est_nav = fund.last_nav if fund and fund.last_nav else 0.0
+        last_nav = fund.last_nav if fund and fund.last_nav else 0.0
+        fund_name = fund.fund_name if fund else pf.fund_code
+        est_nav = last_nav
+        est_change_pct = 0.0
+        coverage = 0.0
+        holdings_date: str | None = None
 
-        # Try to get real-time estimate
+        # Try real-time estimate
         if fund and fund.last_nav:
             holdings = await fund_info_service.get_holdings(db, pf.fund_code)
             if holdings:
+                holdings_date = holdings[0].report_date
                 stock_codes = [h.stock_code for h in holdings]
                 quotes = market_data_service.get_stock_quotes(stock_codes)
                 holdings_data = [
@@ -70,17 +76,30 @@ async def get_portfolio_detail(portfolio_id: int, db: AsyncSession = Depends(get
                     holdings_data, quotes, fund.last_nav
                 )
                 est_nav = estimate["est_nav"]
+                est_change_pct = estimate["est_change_pct"]
+                coverage = estimate["coverage"]
 
         cost = pf.shares * pf.cost_nav
         current_value = pf.shares * est_nav
+        profit = current_value - cost
+        profit_pct = (profit / cost * 100) if cost > 0 else 0.0
         total_cost += cost
         total_estimate += current_value
 
         funds_response.append(
             PortfolioFundResponse(
                 fund_code=pf.fund_code,
+                fund_name=fund_name,
                 shares=pf.shares,
                 cost_nav=pf.cost_nav,
+                est_nav=round(est_nav, 4),
+                est_change_pct=round(est_change_pct, 4),
+                cost=round(cost, 2),
+                current_value=round(current_value, 2),
+                profit=round(profit, 2),
+                profit_pct=round(profit_pct, 4),
+                coverage=round(coverage, 4),
+                holdings_date=holdings_date,
             )
         )
 
