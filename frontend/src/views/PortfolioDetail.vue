@@ -145,10 +145,32 @@ onUnmounted(() => {
     <div v-if="portfolio && portfolio.funds.length > 0" class="fund-list">
       <div v-for="f in portfolio.funds" :key="f.fund_code" class="fund-row">
         <div class="fund-main" @click="router.push(`/fund/${f.fund_code}`)">
-          <div class="fund-code">{{ f.fund_code }}</div>
-          <div class="fund-info">
-            <span>份额: {{ f.shares }}</span>
-            <span>成本净值: {{ formatMoney(f.cost_nav) }}</span>
+          <div class="fund-header">
+            <span class="fund-name">{{ f.fund_name }}</span>
+            <span class="fund-code-tag">{{ f.fund_code }}</span>
+          </div>
+          <div class="fund-est">
+            <span class="est-nav">{{ f.est_nav.toFixed(4) }}</span>
+            <span class="badge">估</span>
+            <span :class="pctClass(f.est_change_pct)" class="est-pct">
+              {{ formatPct(f.est_change_pct) }}
+            </span>
+          </div>
+          <div class="fund-pl">
+            <span class="pl-label">持仓收益</span>
+            <span :class="pctClass(f.profit)" class="pl-value">
+              {{ f.profit >= 0 ? '+' : '' }}{{ f.profit.toFixed(2) }}
+            </span>
+            <span :class="pctClass(f.profit_pct)" class="pl-pct">
+              ({{ formatPct(f.profit_pct) }})
+            </span>
+          </div>
+          <div class="fund-meta">
+            <span>份额 {{ f.shares }}</span>
+            <span>成本 {{ f.cost_nav.toFixed(4) }}</span>
+            <span v-if="f.holdings_date" class="holdings-date">
+              持仓截至 {{ f.holdings_date }}
+            </span>
           </div>
         </div>
         <button class="remove-btn" @click.stop="removeFund(f.fund_code)">删除</button>
@@ -255,17 +277,74 @@ onUnmounted(() => {
   flex: 1;
 }
 
-.fund-code {
-  font-size: 16px;
+.fund-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.fund-name {
+  font-size: 15px;
   font-weight: 600;
+}
+
+.fund-code-tag {
+  font-size: 11px;
+  color: #999;
+  background: #f5f5f5;
+  padding: 1px 6px;
+  border-radius: 3px;
+}
+
+.fund-est {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   margin-bottom: 4px;
 }
 
-.fund-info {
+.est-nav {
+  font-size: 18px;
+  font-weight: 600;
+  color: #1a1a2e;
+}
+
+.est-pct {
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.fund-pl {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 4px;
+  font-size: 13px;
+}
+
+.pl-label {
+  color: #999;
   font-size: 12px;
-  color: #666;
+}
+
+.pl-value {
+  font-weight: 500;
+}
+
+.pl-pct {
+  font-size: 12px;
+}
+
+.fund-meta {
   display: flex;
   gap: 12px;
+  font-size: 11px;
+  color: #aaa;
+}
+
+.holdings-date {
+  color: #bbb;
 }
 
 .remove-btn {

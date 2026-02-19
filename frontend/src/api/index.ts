@@ -40,11 +40,26 @@ export interface PortfolioSummary {
   created_at: string
 }
 
+export interface PortfolioFund {
+  fund_code: string
+  fund_name: string
+  shares: number
+  cost_nav: number
+  est_nav: number
+  est_change_pct: number
+  cost: number
+  current_value: number
+  profit: number
+  profit_pct: number
+  coverage: number
+  holdings_date: string | null
+}
+
 export interface PortfolioDetail {
   id: number
   name: string
   created_at: string
-  funds: Array<{ fund_code: string; shares: number; cost_nav: number }>
+  funds: PortfolioFund[]
   total_cost: number
   total_estimate: number
   total_profit: number
