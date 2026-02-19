@@ -40,11 +40,26 @@ export interface PortfolioSummary {
   created_at: string
 }
 
+export interface PortfolioFund {
+  fund_code: string
+  fund_name: string
+  shares: number
+  cost_nav: number
+  est_nav: number
+  est_change_pct: number
+  cost: number
+  current_value: number
+  profit: number
+  profit_pct: number
+  coverage: number
+  holdings_date: string | null
+}
+
 export interface PortfolioDetail {
   id: number
   name: string
   created_at: string
-  funds: Array<{ fund_code: string; shares: number; cost_nav: number }>
+  funds: PortfolioFund[]
   total_cost: number
   total_estimate: number
   total_profit: number
@@ -76,6 +91,12 @@ export interface IndexIntradayData {
   name: string
 }
 
+export interface FundSearchResult {
+  fund_code: string
+  fund_name: string
+  fund_type: string
+}
+
 export const api = {
   getFund: (code: string) => request<FundInfo>(`/api/fund/${code}`),
 
@@ -103,6 +124,8 @@ export const api = {
     request<unknown>(`/api/portfolio/${id}/funds/${fundCode}`, { method: 'DELETE' }),
 
   setupFund: (code: string) => request<unknown>(`/api/fund/setup/${code}`, { method: 'POST' }),
+
+  searchFunds: (q: string) => request<FundSearchResult[]>(`/api/fund/search?q=${encodeURIComponent(q)}`),
 
   getNavHistory: (code: string, period: string) =>
     request<NavHistoryData>(`/api/fund/${code}/nav-history?period=${period}`),

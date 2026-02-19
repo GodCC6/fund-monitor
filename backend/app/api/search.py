@@ -1,11 +1,31 @@
 """Fund search and setup endpoints."""
 
+import logging
+import time
+from typing import Any
+
+import akshare as ak
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.database import get_db
 from app.services.fund_info import fund_info_service
 from app.services.market_data import market_data_service
+
+logger = logging.getLogger(__name__)
+
+# Simple in-process cache for fund name table (refreshed every hour)
+_fund_name_cache: dict[str, Any] = {"data": None, "ts": 0}
+_FUND_NAME_CACHE_TTL = 3600  # 1 hour
+
+
+def _get_fund_name_table():
+    """Return cached fund name DataFrame, refresh if stale."""
+    now = time.time()
+    if _fund_name_cache["data"] is None or now - _fund_name_cache["ts"] > _FUND_NAME_CACHE_TTL:
+        _fund_name_cache["data"] = ak.fund_name_em()
+        _fund_name_cache["ts"] = now
+    return _fund_name_cache["data"]
 
 router = APIRouter(prefix="/api", tags=["search"])
 
@@ -72,3 +92,33 @@ async def setup_fund(fund_code: str, db: AsyncSession = Depends(get_db)):
         "nav": nav_data["nav"],
         "holdings_count": len(holdings[:10]) if holdings else 0,
     }
+
+
+@router.get("/fund/search")
+async def search_funds(q: str = ""):
+    """Search funds by name or code prefix.
+
+    Returns up to 20 matches: [{fund_code, fund_name, fund_type}].
+    """
+    q = q.strip()
+    if not q:
+        return []
+
+    try:
+        df = _get_fund_name_table()
+        mask = (
+            df["基金代码"].str.startswith(q)
+            | df["基金简称"].str.contains(q, case=False, na=False)
+        )
+        matched = df[mask].head(20)
+        return [
+            {
+                "fund_code": str(row["基金代码"]),
+                "fund_name": str(row["基金简称"]),
+                "fund_type": str(row["基金类型"]),
+            }
+            for _, row in matched.iterrows()
+        ]
+    except Exception as e:
+        logger.error(f"Fund search failed: {e}")
+        return []
