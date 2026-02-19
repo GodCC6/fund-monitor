@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted, computed } from 'vue'
+import { ref, onMounted, onUnmounted, computed, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { api, type PortfolioDetail } from '../api'
+import { api, type PortfolioDetail, type FundSearchResult } from '../api'
 
 const route = useRoute()
 const router = useRouter()
@@ -17,6 +17,44 @@ const addFundCode = ref('')
 const addShares = ref<number | undefined>(undefined)
 const addCostNav = ref<number | undefined>(undefined)
 const addError = ref('')
+
+// Search state
+const searchQuery = ref('')
+const searchResults = ref<FundSearchResult[]>([])
+const searchLoading = ref(false)
+let searchTimer: ReturnType<typeof setTimeout> | null = null
+
+async function doSearch(q: string) {
+  if (!q.trim()) {
+    searchResults.value = []
+    return
+  }
+  searchLoading.value = true
+  try {
+    searchResults.value = await api.searchFunds(q)
+  } catch {
+    searchResults.value = []
+  } finally {
+    searchLoading.value = false
+  }
+}
+
+watch(searchQuery, (q) => {
+  if (searchTimer) clearTimeout(searchTimer)
+  searchTimer = setTimeout(() => doSearch(q), 300)
+})
+
+function selectFund(result: FundSearchResult) {
+  addFundCode.value = result.fund_code
+  searchQuery.value = result.fund_name + ' (' + result.fund_code + ')'
+  searchResults.value = []
+}
+
+function clearSearch() {
+  searchQuery.value = ''
+  addFundCode.value = ''
+  searchResults.value = []
+}
 
 let timer: ReturnType<typeof setInterval> | null = null
 
@@ -187,13 +225,40 @@ onUnmounted(() => {
         + 添加基金
       </button>
       <div v-if="showAddForm" class="add-form">
-        <input v-model="addFundCode" placeholder="基金代码 (如 000001)" />
+        <!-- 搜索框 -->
+        <div class="search-wrapper">
+          <input
+            v-model="searchQuery"
+            placeholder="输入基金名称或代码搜索"
+            @focus="doSearch(searchQuery)"
+          />
+          <button v-if="searchQuery" class="clear-btn" @click="clearSearch">×</button>
+          <!-- 搜索结果下拉 -->
+          <div v-if="searchResults.length > 0" class="search-dropdown">
+            <div
+              v-for="r in searchResults"
+              :key="r.fund_code"
+              class="search-item"
+              @click="selectFund(r)"
+            >
+              <span class="si-name">{{ r.fund_name }}</span>
+              <span class="si-meta">{{ r.fund_code }} · {{ r.fund_type }}</span>
+            </div>
+          </div>
+          <div v-if="searchLoading" class="search-dropdown">
+            <div class="search-item">搜索中...</div>
+          </div>
+        </div>
+        <!-- 已选中的基金代码展示（只读） -->
+        <div v-if="addFundCode" class="selected-fund">
+          已选：{{ addFundCode }}
+        </div>
         <input v-model.number="addShares" placeholder="份额" type="number" step="0.01" />
         <input v-model.number="addCostNav" placeholder="成本净值" type="number" step="0.0001" />
         <p v-if="addError" class="error">{{ addError }}</p>
         <div class="add-form-actions">
           <button @click="addFund">确认添加</button>
-          <button class="cancel-btn" @click="showAddForm = false">取消</button>
+          <button class="cancel-btn" @click="showAddForm = false; clearSearch()">取消</button>
         </div>
       </div>
     </div>
@@ -428,5 +493,71 @@ onUnmounted(() => {
 .error {
   color: #ff4444;
   font-size: 13px;
+}
+
+.search-wrapper {
+  position: relative;
+}
+
+.search-wrapper input {
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.clear-btn {
+  position: absolute;
+  right: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: #aaa;
+  font-size: 16px;
+  padding: 0;
+  line-height: 1;
+}
+
+.search-dropdown {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  background: #fff;
+  border: 1px solid #e0e0e0;
+  border-radius: 6px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+  z-index: 100;
+  max-height: 240px;
+  overflow-y: auto;
+}
+
+.search-item {
+  padding: 10px 12px;
+  cursor: pointer;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 14px;
+  border-bottom: 1px solid #f5f5f5;
+}
+
+.search-item:hover {
+  background: #f9f9f9;
+}
+
+.si-name {
+  font-weight: 500;
+}
+
+.si-meta {
+  font-size: 12px;
+  color: #999;
+}
+
+.selected-fund {
+  font-size: 13px;
+  color: #1677ff;
+  padding: 4px 0;
 }
 </style>

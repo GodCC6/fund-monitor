@@ -91,6 +91,12 @@ export interface IndexIntradayData {
   name: string
 }
 
+export interface FundSearchResult {
+  fund_code: string
+  fund_name: string
+  fund_type: string
+}
+
 export const api = {
   getFund: (code: string) => request<FundInfo>(`/api/fund/${code}`),
 
@@ -118,6 +124,8 @@ export const api = {
     request<unknown>(`/api/portfolio/${id}/funds/${fundCode}`, { method: 'DELETE' }),
 
   setupFund: (code: string) => request<unknown>(`/api/fund/setup/${code}`, { method: 'POST' }),
+
+  searchFunds: (q: string) => request<FundSearchResult[]>(`/api/fund/search?q=${encodeURIComponent(q)}`),
 
   getNavHistory: (code: string, period: string) =>
     request<NavHistoryData>(`/api/fund/${code}/nav-history?period=${period}`),
