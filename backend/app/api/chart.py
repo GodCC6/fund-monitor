@@ -177,11 +177,22 @@ async def get_intraday(
         raise HTTPException(status_code=404, detail="Fund not found")
 
     today_str = datetime.now().strftime("%Y-%m-%d")
+
+    # Find the most recent snapshot date so non-trading days fall back to last
+    # trading day's data instead of returning empty.
+    date_result = await db.execute(
+        select(FundEstimateSnapshot.snapshot_date)
+        .where(FundEstimateSnapshot.fund_code == fund_code)
+        .order_by(FundEstimateSnapshot.snapshot_date.desc())
+        .limit(1)
+    )
+    query_date = date_result.scalar() or today_str
+
     result = await db.execute(
         select(FundEstimateSnapshot)
         .where(
             FundEstimateSnapshot.fund_code == fund_code,
-            FundEstimateSnapshot.snapshot_date == today_str,
+            FundEstimateSnapshot.snapshot_date == query_date,
         )
         .order_by(FundEstimateSnapshot.snapshot_time)
     )
@@ -191,7 +202,7 @@ async def get_intraday(
     navs = [s.est_nav for s in snapshots]
 
     return {
-        "date": today_str,
+        "date": query_date,
         "last_nav": fund.last_nav,
         "times": times,
         "navs": navs,

@@ -1,6 +1,7 @@
 """Market data service using akshare for fund info and eastmoney API for stock quotes."""
 
 import logging
+from datetime import datetime
 from typing import Any
 
 import akshare as ak
@@ -43,6 +44,32 @@ class MarketDataService:
         except Exception as e:
             logger.error(f"Failed to fetch fund basic info for {fund_code}: {e}")
             return None
+
+    def is_market_trading_today(self) -> bool:
+        """Return True if the A-share market has trading data for today.
+
+        Uses the CSI 300 intraday trends endpoint as the source of truth.
+        On weekends and public holidays the endpoint returns the last trading
+        day's data, whose date will not match today.
+        """
+        today_str = datetime.now().strftime("%Y-%m-%d")
+        if datetime.now().weekday() >= 5:  # Saturday or Sunday
+            return False
+        try:
+            url = (
+                "https://push2.eastmoney.com/api/qt/stock/trends2/get"
+                "?secid=1.000300&fields1=f2&fields2=f51&iscr=0&ndays=1"
+            )
+            resp = httpx.get(url, timeout=5)
+            data = resp.json()
+            trends = data.get("data", {}).get("trends", [])
+            if not trends:
+                return False
+            # Entry format: "2026-02-13 09:30"
+            first_date = trends[0].split(",")[0].split(" ")[0]
+            return first_date == today_str
+        except Exception:
+            return True  # If check fails, assume market is open
 
     def get_stock_quotes(self, stock_codes: list[str]) -> dict[str, dict[str, Any]]:
         """Get real-time quotes for a list of stock codes.

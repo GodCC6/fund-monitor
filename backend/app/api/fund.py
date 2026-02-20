@@ -48,6 +48,19 @@ async def get_estimate(fund_code: str, db: AsyncSession = Depends(get_db)):
     if fund.last_nav is None:
         raise HTTPException(status_code=400, detail="Fund NAV not available")
 
+    # On non-trading days (weekends/holidays), stock quotes reflect stale
+    # change_pct from the last trading day. Return zero change instead.
+    if not market_data_service.is_market_trading_today():
+        return FundEstimateResponse(
+            fund_code=fund.fund_code,
+            fund_name=fund.fund_name,
+            est_nav=fund.last_nav,
+            est_change_pct=0.0,
+            coverage=0.0,
+            last_nav=fund.last_nav,
+            details=[],
+        )
+
     holdings = await fund_info_service.get_holdings(db, fund_code)
     if not holdings:
         raise HTTPException(status_code=400, detail="No holdings data available")

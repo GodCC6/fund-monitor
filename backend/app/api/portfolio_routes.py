@@ -44,6 +44,9 @@ async def get_portfolio_detail(portfolio_id: int, db: AsyncSession = Depends(get
 
     pf_list = await portfolio_service.get_portfolio_funds(db, portfolio_id)
 
+    # Check trading day once — avoids redundant API calls per fund
+    is_trading = market_data_service.is_market_trading_today()
+
     total_cost = 0.0
     total_estimate = 0.0
     funds_response = []
@@ -57,8 +60,8 @@ async def get_portfolio_detail(portfolio_id: int, db: AsyncSession = Depends(get
         coverage = 0.0
         holdings_date: str | None = None
 
-        # Try real-time estimate
-        if fund and fund.last_nav:
+        # Try real-time estimate only on trading days
+        if fund and fund.last_nav and is_trading:
             holdings = await fund_info_service.get_holdings(db, pf.fund_code)
             if holdings:
                 holdings_date = holdings[0].report_date

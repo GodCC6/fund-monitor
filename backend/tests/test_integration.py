@@ -88,8 +88,16 @@ async def test_full_flow(db_session):
         assert resp.status_code == 200
 
         # 4. Get estimate
+        mock_quotes = {
+            "600519": {"price": 1800.0, "change_pct": 2.0, "name": "贵州茅台"},
+            "000858": {"price": 150.0, "change_pct": -1.0, "name": "五粮液"},
+        }
         with patch(
-            "app.services.market_data.ak.stock_zh_a_spot_em", return_value=mock_stock_df
+            "app.api.fund.market_data_service.get_stock_quotes",
+            return_value=mock_quotes,
+        ), patch(
+            "app.api.fund.market_data_service.is_market_trading_today",
+            return_value=True,
         ):
             resp = await client.get("/api/fund/000001/estimate")
             assert resp.status_code == 200
@@ -99,7 +107,11 @@ async def test_full_flow(db_session):
 
         # 5. Get portfolio detail
         with patch(
-            "app.services.market_data.ak.stock_zh_a_spot_em", return_value=mock_stock_df
+            "app.api.portfolio_routes.market_data_service.get_stock_quotes",
+            return_value=mock_quotes,
+        ), patch(
+            "app.api.portfolio_routes.market_data_service.is_market_trading_today",
+            return_value=True,
         ):
             resp = await client.get(f"/api/portfolio/{portfolio_id}")
             assert resp.status_code == 200

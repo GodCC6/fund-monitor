@@ -56,7 +56,9 @@ async def test_portfolio_fund_has_name(db_with_data):
 async def test_portfolio_fund_has_est_change_pct(db_with_data):
     mock_quotes = {"600519": {"price": 1900.0, "change_pct": 2.0, "name": "贵州茅台"}}
     with patch("app.api.portfolio_routes.market_data_service.get_stock_quotes",
-               return_value=mock_quotes):
+               return_value=mock_quotes), \
+         patch("app.api.portfolio_routes.market_data_service.is_market_trading_today",
+               return_value=True):
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
             resp = await c.get("/api/portfolio/1")
     fund = resp.json()["funds"][0]
@@ -83,7 +85,9 @@ async def test_portfolio_fund_profit_pct(db_with_data):
 async def test_portfolio_fund_holdings_date(db_with_data):
     mock_quotes = {}
     with patch("app.api.portfolio_routes.market_data_service.get_stock_quotes",
-               return_value=mock_quotes):
+               return_value=mock_quotes), \
+         patch("app.api.portfolio_routes.market_data_service.is_market_trading_today",
+               return_value=True):
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
             resp = await c.get("/api/portfolio/1")
     fund = resp.json()["funds"][0]
