@@ -1,9 +1,9 @@
 """Portfolio API routes."""
 
+import bisect
 from datetime import datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.database import get_db
@@ -171,12 +171,14 @@ async def get_portfolio_history(
     period: str = "30d",
     db: AsyncSession = Depends(get_db),
 ):
-    """Get daily portfolio value snapshots for chart display."""
-    from app.models.portfolio import PortfolioSnapshot
-
+    """Compute portfolio value history from fund NAV history (on-the-fly)."""
     portfolio = await portfolio_service.get_portfolio(db, portfolio_id)
     if portfolio is None:
         raise HTTPException(status_code=404, detail="Portfolio not found")
+
+    pf_list = await portfolio_service.get_portfolio_funds(db, portfolio_id)
+    if not pf_list:
+        return {"dates": [], "values": [], "costs": [], "profit_pcts": []}
 
     today = datetime.now()
     period_map = {
@@ -185,22 +187,53 @@ async def get_portfolio_history(
         "ytd": datetime(today.year, 1, 1),
         "1y": today - timedelta(days=365),
     }
-    cutoff = period_map.get(period, today - timedelta(days=30))
-    cutoff_str = cutoff.strftime("%Y-%m-%d")
+    cutoff_str = period_map.get(period, today - timedelta(days=30)).strftime("%Y-%m-%d")
+    total_cost = sum(pf.shares * pf.cost_nav for pf in pf_list)
 
-    result = await db.execute(
-        select(PortfolioSnapshot)
-        .where(
-            PortfolioSnapshot.portfolio_id == portfolio_id,
-            PortfolioSnapshot.snapshot_date >= cutoff_str,
+    # Fetch NAV history for each fund (1-hour cached)
+    full_navs: dict[str, dict[str, float]] = {
+        pf.fund_code: market_data_service.get_fund_nav_history(pf.fund_code)
+        for pf in pf_list
+    }
+
+    # Collect all trading-day dates in the period where any fund has data
+    all_dates = sorted({
+        d
+        for nav_dict in full_navs.values()
+        for d in nav_dict
+        if d >= cutoff_str
+    })
+    if not all_dates:
+        return {"dates": [], "values": [], "costs": [], "profit_pcts": []}
+
+    # Pre-sort NAV series per fund for O(log n) carry-forward lookups
+    nav_sorted: dict[str, tuple[list[str], list[float]]] = {
+        code: ([d for d, _ in sorted(nav.items())], [v for _, v in sorted(nav.items())])
+        for code, nav in full_navs.items()
+    }
+
+    def nav_on_or_before(fund_code: str, date_str: str) -> float | None:
+        if fund_code not in nav_sorted:
+            return None
+        dates, navs = nav_sorted[fund_code]
+        idx = bisect.bisect_right(dates, date_str) - 1
+        return navs[idx] if idx >= 0 else None
+
+    dates_out, values_out, costs_out, profit_pcts_out = [], [], [], []
+    for date_str in all_dates:
+        value = sum(
+            pf.shares * (nav_on_or_before(pf.fund_code, date_str) or pf.cost_nav)
+            for pf in pf_list
         )
-        .order_by(PortfolioSnapshot.snapshot_date)
-    )
-    snapshots = result.scalars().all()
+        profit_pct = (value - total_cost) / total_cost * 100 if total_cost > 0 else 0.0
+        dates_out.append(date_str)
+        values_out.append(round(value, 2))
+        costs_out.append(round(total_cost, 2))
+        profit_pcts_out.append(round(profit_pct, 4))
 
     return {
-        "dates": [s.snapshot_date for s in snapshots],
-        "values": [s.total_value for s in snapshots],
-        "costs": [s.total_cost for s in snapshots],
-        "profit_pcts": [round(s.profit_pct, 4) for s in snapshots],
+        "dates": dates_out,
+        "values": values_out,
+        "costs": costs_out,
+        "profit_pcts": profit_pcts_out,
     }

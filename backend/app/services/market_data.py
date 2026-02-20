@@ -1,6 +1,7 @@
 """Market data service using akshare for fund info and eastmoney API for stock quotes."""
 
 import logging
+import time
 from datetime import datetime
 from typing import Any
 
@@ -9,6 +10,10 @@ import httpx
 import pandas as pd
 
 logger = logging.getLogger(__name__)
+
+# Module-level cache: fund_code -> (timestamp, {date_str: nav})
+_nav_history_cache: dict[str, tuple[float, dict[str, float]]] = {}
+_NAV_HISTORY_CACHE_TTL = 3600  # 1 hour
 
 
 # Eastmoney market prefix: 沪市=1, 深市=0
@@ -158,6 +163,25 @@ class MarketDataService:
         except Exception as e:
             logger.error(f"Failed to fetch NAV for {fund_code}: {e}")
             return None
+
+    def get_fund_nav_history(self, fund_code: str) -> dict[str, float]:
+        """Get full NAV history for a fund. Returns {date_str: nav}. Cached 1 hour."""
+        now = time.time()
+        if fund_code in _nav_history_cache:
+            ts, data = _nav_history_cache[fund_code]
+            if now - ts < _NAV_HISTORY_CACHE_TTL:
+                return data
+        try:
+            df = ak.fund_open_fund_info_em(symbol=fund_code, indicator="单位净值走势")
+            nav_dict: dict[str, float] = {}
+            for _, row in df.iterrows():
+                date_str = str(row["净值日期"])[:10]  # "YYYY-MM-DD"
+                nav_dict[date_str] = float(row["单位净值"])
+            _nav_history_cache[fund_code] = (now, nav_dict)
+            return nav_dict
+        except Exception as e:
+            logger.error(f"Failed to fetch NAV history for {fund_code}: {e}")
+            return {}
 
 
 # Global instance
