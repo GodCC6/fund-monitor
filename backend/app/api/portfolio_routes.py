@@ -1,6 +1,9 @@
 """Portfolio API routes."""
 
+from datetime import datetime, timedelta
+
 from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.database import get_db
@@ -160,3 +163,44 @@ async def remove_fund_from_portfolio(
 ):
     await portfolio_service.remove_fund(db, portfolio_id, fund_code)
     return {"status": "ok"}
+
+
+@router.get("/{portfolio_id}/history")
+async def get_portfolio_history(
+    portfolio_id: int,
+    period: str = "30d",
+    db: AsyncSession = Depends(get_db),
+):
+    """Get daily portfolio value snapshots for chart display."""
+    from app.models.portfolio import PortfolioSnapshot
+
+    portfolio = await portfolio_service.get_portfolio(db, portfolio_id)
+    if portfolio is None:
+        raise HTTPException(status_code=404, detail="Portfolio not found")
+
+    today = datetime.now()
+    period_map = {
+        "7d": today - timedelta(days=7),
+        "30d": today - timedelta(days=30),
+        "ytd": datetime(today.year, 1, 1),
+        "1y": today - timedelta(days=365),
+    }
+    cutoff = period_map.get(period, today - timedelta(days=30))
+    cutoff_str = cutoff.strftime("%Y-%m-%d")
+
+    result = await db.execute(
+        select(PortfolioSnapshot)
+        .where(
+            PortfolioSnapshot.portfolio_id == portfolio_id,
+            PortfolioSnapshot.snapshot_date >= cutoff_str,
+        )
+        .order_by(PortfolioSnapshot.snapshot_date)
+    )
+    snapshots = result.scalars().all()
+
+    return {
+        "dates": [s.snapshot_date for s in snapshots],
+        "values": [s.total_value for s in snapshots],
+        "costs": [s.total_cost for s in snapshots],
+        "profit_pcts": [round(s.profit_pct, 4) for s in snapshots],
+    }

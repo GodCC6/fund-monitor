@@ -4,6 +4,7 @@ import logging
 from datetime import datetime
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.interval import IntervalTrigger
+from apscheduler.triggers.cron import CronTrigger
 
 from app.services.market_data import market_data_service
 from app.services.cache import stock_cache
@@ -95,12 +96,111 @@ async def update_stock_quotes():
         logger.error(f"Failed to update stock quotes: {e}")
 
 
+async def save_portfolio_snapshots():
+    """At market close (15:05 weekdays), record daily portfolio value snapshots."""
+    try:
+        from app.models.portfolio import PortfolioSnapshot
+        from sqlalchemy import delete as sa_delete
+
+        async with async_session_factory() as session:
+            from app.services.portfolio import portfolio_service
+
+            portfolios = await portfolio_service.list_portfolios(session)
+            today = datetime.now().strftime("%Y-%m-%d")
+
+            for portfolio in portfolios:
+                pf_list = await portfolio_service.get_portfolio_funds(session, portfolio.id)
+                total_cost = 0.0
+                total_value = 0.0
+
+                for pf in pf_list:
+                    fund = await fund_info_service.get_fund(session, pf.fund_code)
+                    if not fund or not fund.last_nav:
+                        continue
+
+                    est_nav = fund.last_nav
+                    holdings = await fund_info_service.get_holdings(session, pf.fund_code)
+                    if holdings:
+                        stock_codes = [h.stock_code for h in holdings]
+                        quotes = {
+                            k: stock_cache.get(f"stock:{k}")
+                            for k in stock_codes
+                            if stock_cache.get(f"stock:{k}") is not None
+                        }
+                        if quotes:
+                            holdings_data = [
+                                {
+                                    "stock_code": h.stock_code,
+                                    "stock_name": h.stock_name,
+                                    "holding_ratio": h.holding_ratio,
+                                }
+                                for h in holdings
+                            ]
+                            estimate = fund_estimator.calculate_estimate(
+                                holdings_data, quotes, fund.last_nav
+                            )
+                            est_nav = estimate["est_nav"]
+
+                    total_cost += pf.shares * pf.cost_nav
+                    total_value += pf.shares * est_nav
+
+                # Upsert: replace existing snapshot for today
+                await session.execute(
+                    sa_delete(PortfolioSnapshot).where(
+                        PortfolioSnapshot.portfolio_id == portfolio.id,
+                        PortfolioSnapshot.snapshot_date == today,
+                    )
+                )
+                session.add(PortfolioSnapshot(
+                    portfolio_id=portfolio.id,
+                    snapshot_date=today,
+                    total_value=round(total_value, 2),
+                    total_cost=round(total_cost, 2),
+                ))
+
+            await session.commit()
+            logger.info(f"Saved portfolio snapshots for {len(portfolios)} portfolios")
+    except Exception as e:
+        logger.error(f"Failed to save portfolio snapshots: {e}")
+
+
+async def refresh_all_fund_navs():
+    """After market close (20:30 weekdays), fetch official NAV for all tracked funds."""
+    try:
+        async with async_session_factory() as session:
+            funds = await fund_info_service.get_all_funds(session)
+            updated = 0
+            for fund in funds:
+                nav_data = market_data_service.get_fund_nav(fund.fund_code)
+                if nav_data and nav_data["nav_date"] != fund.nav_date:
+                    fund.last_nav = nav_data["nav"]
+                    fund.nav_date = nav_data["nav_date"]
+                    fund.updated_at = datetime.now().isoformat()
+                    updated += 1
+            await session.commit()
+            logger.info(f"Refreshed official NAV for {updated}/{len(funds)} funds")
+    except Exception as e:
+        logger.error(f"Failed to refresh fund NAVs: {e}")
+
+
 def start_scheduler():
     """Start the background scheduler."""
     scheduler.add_job(
         update_stock_quotes,
         trigger=IntervalTrigger(seconds=MARKET_DATA_INTERVAL),
         id="update_stock_quotes",
+        replace_existing=True,
+    )
+    scheduler.add_job(
+        save_portfolio_snapshots,
+        trigger=CronTrigger(hour=15, minute=5, day_of_week="mon-fri"),
+        id="save_portfolio_snapshots",
+        replace_existing=True,
+    )
+    scheduler.add_job(
+        refresh_all_fund_navs,
+        trigger=CronTrigger(hour=20, minute=30, day_of_week="mon-fri"),
+        id="refresh_all_fund_navs",
         replace_existing=True,
     )
     scheduler.start()
