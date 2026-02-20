@@ -85,7 +85,7 @@ onMounted(load)
           </span>
         </div>
         <div class="est-item">
-          <span class="label">昨日净值</span>
+          <span class="label">参考净值{{ fund?.nav_date ? `（${fund.nav_date}）` : '' }}</span>
           <span>{{ estimate.last_nav.toFixed(4) }}</span>
         </div>
         <div class="est-item">

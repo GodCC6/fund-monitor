@@ -27,6 +27,7 @@ const periods = [
 const activePeriod = ref('30d')
 const loading = ref(false)
 const empty = ref(false)
+const noFundIntraday = ref(false)
 const chartRef = ref<HTMLDivElement>()
 let chart: echarts.ECharts | null = null
 
@@ -53,6 +54,7 @@ interface ChartData {
 async function loadData() {
   loading.value = true
   empty.value = false
+  noFundIntraday.value = false
 
   try {
     let chartData: ChartData
@@ -70,6 +72,18 @@ async function loadData() {
         fundMap.set(t, fundData.navs[i]!)
       }
 
+      if (fundData.times.length === 0 && indexData.times.length === 0) {
+        empty.value = true
+        if (chart) chart.clear()
+        loading.value = false
+        return
+      }
+
+      // No fund intraday snapshots today: only show index, hide fund line
+      if (fundData.times.length === 0) {
+        noFundIntraday.value = true
+      }
+
       const xData: string[] = []
       const fundNavs: number[] = []
       const indexValues: number[] = []
@@ -83,13 +97,6 @@ async function loadData() {
           lastFundNav = fundMap.get(t)!
         }
         fundNavs.push(lastFundNav)
-      }
-
-      if (fundData.times.length === 0 && indexData.times.length === 0) {
-        empty.value = true
-        if (chart) chart.clear()
-        loading.value = false
-        return
       }
 
       chartData = { xData, fundNavs, indexValues, indexName: indexData.name }
@@ -166,7 +173,9 @@ async function loadData() {
         },
       },
       legend: {
-        data: ['基金净值', chartData.indexName],
+        data: activePeriod.value === '1d' && noFundIntraday.value
+          ? [chartData.indexName]
+          : ['基金净值', chartData.indexName],
         top: 0,
         textStyle: { fontSize: 12 },
       },
@@ -200,20 +209,21 @@ async function loadData() {
         { type: 'inside', start: 0, end: 100 },
       ],
       series: [
-        {
+        // Only render fund series when there is intraday snapshot data
+        ...(activePeriod.value === '1d' && noFundIntraday.value ? [] : [{
           name: '基金净值',
           type: 'line',
           data: fundPcts,
-          smooth: true,
+          smooth: false,
           symbol: 'none',
           lineStyle: { color: fundColor, width: 2 },
           areaStyle: { color: fundAreaColor },
-        },
+        }]),
         {
           name: chartData.indexName,
           type: 'line',
           data: indexPcts,
-          smooth: true,
+          smooth: false,
           symbol: 'none',
           lineStyle: { color: indexColor, width: 1.5, type: 'dashed' },
         },
@@ -248,6 +258,9 @@ onUnmounted(() => {
 
 <template>
   <div class="nav-chart">
+    <div v-if="noFundIntraday && activePeriod === '1d'" class="no-intraday-tip">
+      当日暂无基金盘中估值快照，仅显示参考指数走势
+    </div>
     <div class="period-tabs">
       <button
         v-for="p in periods"
@@ -316,6 +329,16 @@ onUnmounted(() => {
 .chart-canvas {
   width: 100%;
   height: 300px;
+}
+
+.no-intraday-tip {
+  font-size: 12px;
+  color: #999;
+  background: #fffbe6;
+  border: 1px solid #ffe58f;
+  border-radius: 4px;
+  padding: 6px 10px;
+  margin-bottom: 8px;
 }
 
 .chart-overlay {
