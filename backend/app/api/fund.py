@@ -40,6 +40,21 @@ async def get_holdings(fund_code: str, db: AsyncSession = Depends(get_db)):
     ]
 
 
+@router.post("/{fund_code}/refresh-nav")
+async def refresh_nav(fund_code: str, db: AsyncSession = Depends(get_db)):
+    """Manually trigger NAV refresh from data source."""
+    fund = await fund_info_service.get_fund(db, fund_code)
+    if fund is None:
+        raise HTTPException(status_code=404, detail="Fund not found")
+
+    nav_data = market_data_service.get_fund_nav(fund_code)
+    if nav_data is None:
+        raise HTTPException(status_code=503, detail="NAV data source unavailable")
+
+    await fund_info_service.update_nav(db, fund_code, nav_data["nav"], nav_data["nav_date"])
+    return {"fund_code": fund_code, "nav": nav_data["nav"], "nav_date": nav_data["nav_date"]}
+
+
 @router.get("/{fund_code}/estimate", response_model=FundEstimateResponse)
 async def get_estimate(fund_code: str, db: AsyncSession = Depends(get_db)):
     fund = await fund_info_service.get_fund(db, fund_code)
