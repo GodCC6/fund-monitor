@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted, computed, watch } from 'vue'
+import { ref, onMounted, onUnmounted, computed, watch, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { api, type PortfolioDetail, type FundSearchResult } from '../api'
 
@@ -11,12 +11,45 @@ const portfolio = ref<PortfolioDetail | null>(null)
 const loading = ref(false)
 const error = ref('')
 
+// Name editing
+const isEditingName = ref(false)
+const editingName = ref('')
+const nameInputRef = ref<HTMLInputElement>()
+
+async function startEditName() {
+  editingName.value = portfolio.value?.name ?? ''
+  isEditingName.value = true
+  await nextTick()
+  nameInputRef.value?.focus()
+  nameInputRef.value?.select()
+}
+
+async function saveName() {
+  const name = editingName.value.trim()
+  if (!name || name === portfolio.value?.name) {
+    isEditingName.value = false
+    return
+  }
+  try {
+    await api.renamePortfolio(portfolioId.value, name)
+    if (portfolio.value) portfolio.value.name = name
+    isEditingName.value = false
+  } catch (e: unknown) {
+    error.value = e instanceof Error ? e.message : '修改失败'
+  }
+}
+
+function cancelEditName() {
+  isEditingName.value = false
+}
+
 // Add fund form
 const showAddForm = ref(false)
 const addFundCode = ref('')
 const addShares = ref<number | undefined>(undefined)
 const addCostNav = ref<number | undefined>(undefined)
 const addError = ref('')
+const addLoading = ref(false)
 
 // Search state
 const searchQuery = ref('')
@@ -70,6 +103,9 @@ async function load() {
   }
 }
 
+// True when at least one fund has live coverage (real-time estimate active)
+const isEstimating = computed(() => portfolio.value?.funds.some(f => f.coverage > 0) ?? false)
+
 function isTradeTime(): boolean {
   const now = new Date()
   const h = now.getHours()
@@ -87,12 +123,14 @@ function startAutoRefresh() {
 }
 
 async function addFund() {
+  if (addLoading.value) return
   addError.value = ''
   const code = addFundCode.value.trim()
   if (!code || !addShares.value || !addCostNav.value) {
     addError.value = '请填写完整信息'
     return
   }
+  addLoading.value = true
   try {
     // First try to set up the fund (fetch info + holdings from akshare)
     try {
@@ -108,6 +146,8 @@ async function addFund() {
     await load()
   } catch (e: unknown) {
     addError.value = e instanceof Error ? e.message : '添加失败'
+  } finally {
+    addLoading.value = false
   }
 }
 
@@ -150,7 +190,23 @@ onUnmounted(() => {
   <div class="portfolio-detail">
     <div class="back" @click="router.push('/')">← 返回</div>
 
-    <h2 v-if="portfolio">{{ portfolio.name }}</h2>
+    <div v-if="portfolio" class="name-row">
+      <template v-if="!isEditingName">
+        <h2 class="portfolio-name">{{ portfolio.name }}</h2>
+        <button class="edit-name-btn" @click="startEditName" title="修改名称">✏️</button>
+      </template>
+      <template v-else>
+        <input
+          ref="nameInputRef"
+          v-model="editingName"
+          class="name-input"
+          @keyup.enter="saveName"
+          @keyup.escape="cancelEditName"
+        />
+        <button class="save-name-btn" @click="saveName">保存</button>
+        <button class="cancel-name-btn" @click="cancelEditName">取消</button>
+      </template>
+    </div>
 
     <p v-if="loading && !portfolio" class="hint">加载中...</p>
     <p v-if="error" class="error">{{ error }}</p>
@@ -162,7 +218,7 @@ onUnmounted(() => {
         <span>{{ formatMoney(portfolio.total_cost) }}</span>
       </div>
       <div class="summary-item">
-        <span class="label">估值 <span class="badge">估</span></span>
+        <span class="label">估值 <span v-if="isEstimating" class="badge">估</span></span>
         <span>{{ formatMoney(portfolio.total_estimate) }}</span>
       </div>
       <div class="summary-item">
@@ -189,7 +245,7 @@ onUnmounted(() => {
           </div>
           <div class="fund-est">
             <span class="est-nav">{{ f.est_nav.toFixed(4) }}</span>
-            <span class="badge">估</span>
+            <span v-if="f.coverage > 0" class="badge">估</span>
             <span :class="pctClass(f.est_change_pct)" class="est-pct">
               {{ formatPct(f.est_change_pct) }}
             </span>
@@ -257,8 +313,10 @@ onUnmounted(() => {
         <input v-model.number="addCostNav" placeholder="成本净值" type="number" step="0.0001" />
         <p v-if="addError" class="error">{{ addError }}</p>
         <div class="add-form-actions">
-          <button @click="addFund">确认添加</button>
-          <button class="cancel-btn" @click="showAddForm = false; clearSearch()">取消</button>
+          <button @click="addFund" :disabled="addLoading">
+            {{ addLoading ? '添加中...' : '确认添加' }}
+          </button>
+          <button class="cancel-btn" :disabled="addLoading" @click="showAddForm = false; clearSearch()">取消</button>
         </div>
       </div>
     </div>
@@ -559,5 +617,65 @@ onUnmounted(() => {
   font-size: 13px;
   color: #1677ff;
   padding: 4px 0;
+}
+
+.name-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.portfolio-name {
+  margin: 0;
+  font-size: 20px;
+}
+
+.edit-name-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 14px;
+  color: #aaa;
+  padding: 2px 4px;
+  line-height: 1;
+}
+
+.edit-name-btn:hover {
+  color: #666;
+}
+
+.name-input {
+  flex: 1;
+  padding: 6px 10px;
+  border: 1px solid #1677ff;
+  border-radius: 6px;
+  font-size: 18px;
+  font-weight: 600;
+  outline: none;
+}
+
+.save-name-btn,
+.cancel-name-btn {
+  padding: 6px 14px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 13px;
+  border: none;
+}
+
+.save-name-btn {
+  background: #1677ff;
+  color: #fff;
+}
+
+.cancel-name-btn {
+  background: #f5f5f5;
+  color: #666;
+}
+
+.add-form-actions button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
 }
 </style>

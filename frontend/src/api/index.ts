@@ -114,6 +114,12 @@ export const api = {
 
   getPortfolio: (id: number) => request<PortfolioDetail>(`/api/portfolio/${id}`),
 
+  renamePortfolio: (id: number, name: string) =>
+    request<PortfolioSummary>(`/api/portfolio/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ name }),
+    }),
+
   addFundToPortfolio: (id: number, fundCode: string, shares: number, costNav: number) =>
     request<unknown>(`/api/portfolio/${id}/funds`, {
       method: 'POST',

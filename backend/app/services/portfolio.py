@@ -30,6 +30,16 @@ class PortfolioService:
         await session.execute(delete(Portfolio).where(Portfolio.id == portfolio_id))
         await session.commit()
 
+    async def rename_portfolio(
+        self, session: AsyncSession, portfolio_id: int, name: str
+    ) -> Portfolio | None:
+        portfolio = await session.get(Portfolio, portfolio_id)
+        if portfolio is None:
+            return None
+        portfolio.name = name
+        await session.commit()
+        return portfolio
+
     async def add_fund(
         self,
         session: AsyncSession,

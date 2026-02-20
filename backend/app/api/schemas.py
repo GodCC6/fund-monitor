@@ -36,6 +36,10 @@ class PortfolioCreateRequest(BaseModel):
     name: str
 
 
+class PortfolioRenameRequest(BaseModel):
+    name: str
+
+
 class PortfolioFundAddRequest(BaseModel):
     fund_code: str
     shares: float

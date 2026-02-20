@@ -10,6 +10,7 @@ from app.services.market_data import market_data_service
 from app.services.estimator import fund_estimator
 from app.api.schemas import (
     PortfolioCreateRequest,
+    PortfolioRenameRequest,
     PortfolioFundAddRequest,
     PortfolioResponse,
     PortfolioDetailResponse,
@@ -119,6 +120,21 @@ async def get_portfolio_detail(portfolio_id: int, db: AsyncSession = Depends(get
         total_profit=round(total_profit, 2),
         total_profit_pct=round(total_profit_pct, 4),
     )
+
+
+@router.patch("/{portfolio_id}", response_model=PortfolioResponse)
+async def rename_portfolio(
+    portfolio_id: int,
+    req: PortfolioRenameRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    name = req.name.strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="Name cannot be empty")
+    portfolio = await portfolio_service.rename_portfolio(db, portfolio_id, name)
+    if portfolio is None:
+        raise HTTPException(status_code=404, detail="Portfolio not found")
+    return PortfolioResponse(id=portfolio.id, name=portfolio.name, created_at=portfolio.created_at)
 
 
 @router.post("/{portfolio_id}/funds")

@@ -71,7 +71,7 @@ onMounted(load)
     <!-- Estimate -->
     <div v-if="estimate" class="estimate-card">
       <div class="estimate-header">
-        <h3>实时估值 <span class="badge">估</span></h3>
+        <h3>实时估值 <span v-if="estimate.coverage > 0" class="badge">估</span></h3>
       </div>
       <div class="estimate-summary">
         <div class="est-item">
