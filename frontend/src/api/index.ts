@@ -97,6 +97,13 @@ export interface FundSearchResult {
   fund_type: string
 }
 
+export interface PortfolioHistoryData {
+  dates: string[]
+  values: number[]
+  costs: number[]
+  profit_pcts: number[]
+}
+
 export const api = {
   getFund: (code: string) => request<FundInfo>(`/api/fund/${code}`),
 
@@ -144,4 +151,10 @@ export const api = {
 
   getIndexIntraday: () =>
     request<IndexIntradayData>('/api/fund/index/intraday'),
+
+  getPortfolioHistory: (id: number, period: string) =>
+    request<PortfolioHistoryData>(`/api/portfolio/${id}/history?period=${period}`),
+
+  refreshFundNav: (code: string) =>
+    request<{ fund_code: string; nav: number; nav_date: string }>(`/api/fund/${code}/refresh-nav`, { method: 'POST' }),
 }

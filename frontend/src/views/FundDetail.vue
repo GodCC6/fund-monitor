@@ -36,6 +36,34 @@ function pctClass(val: number): string {
   return ''
 }
 
+function navStaleDays(navDate: string | null): number {
+  if (!navDate) return 999
+  const d = new Date(navDate)
+  const now = new Date()
+  return Math.floor((now.getTime() - d.getTime()) / (1000 * 60 * 60 * 24))
+}
+
+function isNavStale(navDate: string | null): boolean {
+  return navStaleDays(navDate) > 3
+}
+
+const refreshing = ref(false)
+async function refreshNav() {
+  if (!fund.value || refreshing.value) return
+  refreshing.value = true
+  try {
+    const result = await api.refreshFundNav(fundCode.value)
+    if (fund.value) {
+      fund.value.last_nav = result.nav
+      fund.value.nav_date = result.nav_date
+    }
+  } catch {
+    // silently ignore
+  } finally {
+    refreshing.value = false
+  }
+}
+
 function formatPct(val: number): string {
   const sign = val > 0 ? '+' : ''
   return `${sign}${val.toFixed(2)}%`
@@ -64,7 +92,18 @@ onMounted(load)
       </div>
       <div v-if="fund.last_nav != null" class="info-row">
         <span class="label">最新净值</span>
-        <span>{{ fund.last_nav }} ({{ fund.nav_date }})</span>
+        <span class="nav-value-row">
+          {{ fund.last_nav }}
+          <span class="nav-date" :class="{ stale: isNavStale(fund.nav_date) }">
+            {{ fund.nav_date }}
+            <span v-if="isNavStale(fund.nav_date)" class="stale-hint">
+              ⚠ 已 {{ navStaleDays(fund.nav_date) }} 天未更新
+            </span>
+          </span>
+          <button class="refresh-nav-btn" :disabled="refreshing" @click.stop="refreshNav">
+            {{ refreshing ? '刷新中...' : '刷新' }}
+          </button>
+        </span>
       </div>
     </div>
 
@@ -251,5 +290,40 @@ onMounted(load)
 .error {
   color: #ff4444;
   text-align: center;
+}
+
+.nav-value-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.nav-date {
+  font-size: 12px;
+  color: #999;
+}
+
+.nav-date.stale {
+  color: #ff9800;
+}
+
+.stale-hint {
+  font-size: 11px;
+}
+
+.refresh-nav-btn {
+  font-size: 11px;
+  padding: 2px 8px;
+  border: 1px solid #d9d9d9;
+  border-radius: 4px;
+  background: #fafafa;
+  color: #666;
+  cursor: pointer;
+}
+
+.refresh-nav-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
 }
 </style>

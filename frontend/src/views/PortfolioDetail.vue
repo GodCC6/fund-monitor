@@ -2,6 +2,7 @@
 import { ref, onMounted, onUnmounted, computed, watch, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { api, type PortfolioDetail, type FundSearchResult } from '../api'
+import PortfolioChart from '../components/PortfolioChart.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -105,6 +106,14 @@ async function load() {
 
 // True when at least one fund has live coverage (real-time estimate active)
 const isEstimating = computed(() => portfolio.value?.funds.some(f => f.coverage > 0) ?? false)
+
+function isHoldingsStale(date: string | null): boolean {
+  if (!date) return false
+  const d = new Date(date)
+  const now = new Date()
+  const days = Math.floor((now.getTime() - d.getTime()) / (1000 * 60 * 60 * 24))
+  return days > 90
+}
 
 function isTradeTime(): boolean {
   const now = new Date()
@@ -235,6 +244,9 @@ onUnmounted(() => {
       </div>
     </div>
 
+    <!-- Portfolio value history chart -->
+    <PortfolioChart v-if="portfolio" :portfolio-id="portfolioId" />
+
     <!-- Fund list -->
     <div v-if="portfolio && portfolio.funds.length > 0" class="fund-list">
       <div v-for="f in portfolio.funds" :key="f.fund_code" class="fund-row">
@@ -262,8 +274,13 @@ onUnmounted(() => {
           <div class="fund-meta">
             <span>份额 {{ f.shares }}</span>
             <span>成本 {{ f.cost_nav.toFixed(4) }}</span>
-            <span v-if="f.holdings_date" class="holdings-date">
+            <span
+              v-if="f.holdings_date"
+              class="holdings-date"
+              :class="{ 'holdings-stale': isHoldingsStale(f.holdings_date) }"
+            >
               持仓截至 {{ f.holdings_date }}
+              <span v-if="isHoldingsStale(f.holdings_date)">⚠</span>
             </span>
           </div>
         </div>
@@ -468,6 +485,10 @@ onUnmounted(() => {
 
 .holdings-date {
   color: #bbb;
+}
+
+.holdings-stale {
+  color: #ff9800 !important;
 }
 
 .remove-btn {
