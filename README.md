@@ -79,6 +79,8 @@ open http://localhost
 docker compose down
 ```
 
+**服务器部署（HTTPS、备份、运维）**：详见 [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)
+
 ---
 
 ### 方式二：本地开发
