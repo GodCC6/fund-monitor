@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { api, type FundInfo, type FundEstimate } from '../api'
+import { api, type FundInfo, type FundEstimate, type FundHolding } from '../api'
 import NavChart from '../components/NavChart.vue'
 
 const route = useRoute()
@@ -10,6 +10,7 @@ const fundCode = computed(() => route.params.code as string)
 
 const fund = ref<FundInfo | null>(null)
 const estimate = ref<FundEstimate | null>(null)
+const holdings = ref<FundHolding[]>([])
 const loading = ref(false)
 const error = ref('')
 
@@ -17,18 +18,44 @@ async function load() {
   loading.value = true
   error.value = ''
   try {
-    const [fundData, estData] = await Promise.all([
+    const [fundData, estData, holdingsData] = await Promise.all([
       api.getFund(fundCode.value),
       api.getFundEstimate(fundCode.value),
+      api.getFundHoldings(fundCode.value),
     ])
     fund.value = fundData
     estimate.value = estData
+    holdings.value = holdingsData
   } catch (e: unknown) {
     error.value = e instanceof Error ? e.message : '加载失败'
   } finally {
     loading.value = false
   }
 }
+
+// Merge static holdings with live estimate details (available on trading days only)
+interface HoldingRow extends FundHolding {
+  change_pct: number | null
+  contribution: number | null
+}
+const holdingRows = computed((): HoldingRow[] => {
+  const liveMap = new Map(
+    (estimate.value?.details ?? []).map(d => [d.stock_code, d])
+  )
+  return holdings.value.map(h => {
+    const live = liveMap.get(h.stock_code)
+    return {
+      ...h,
+      change_pct: live?.change_pct ?? null,
+      contribution: live?.contribution ?? null,
+    }
+  })
+})
+
+const totalCoverage = computed(() =>
+  holdings.value.reduce((sum, h) => sum + h.holding_ratio, 0)
+)
+const reportDate = computed(() => holdings.value[0]?.report_date ?? '')
 
 function pctClass(val: number): string {
   if (val > 0) return 'up'
@@ -135,28 +162,38 @@ onMounted(load)
 
       <!-- NAV Chart -->
       <NavChart :fund-code="fundCode" />
+    </div>
 
-      <!-- Holdings breakdown -->
-      <div v-if="estimate.details.length > 0" class="holdings">
-        <h4>持仓明细</h4>
-        <div class="holdings-header">
-          <span>股票</span>
-          <span>占比</span>
-          <span>现价</span>
-          <span>涨跌</span>
-          <span>贡献</span>
-        </div>
-        <div
-          v-for="d in estimate.details"
-          :key="d.stock_code"
-          class="holding-row"
-        >
-          <span class="stock-name" :title="d.stock_code">{{ d.stock_name }}</span>
-          <span>{{ (d.holding_ratio * 100).toFixed(1) }}%</span>
-          <span>{{ d.price.toFixed(2) }}</span>
-          <span :class="pctClass(d.change_pct)">{{ formatPct(d.change_pct) }}</span>
-          <span :class="pctClass(d.contribution)">{{ d.contribution > 0 ? '+' : '' }}{{ d.contribution.toFixed(4) }}</span>
-        </div>
+    <!-- Holdings card — always shown from quarterly report data -->
+    <div v-if="holdingRows.length > 0" class="holdings-card">
+      <div class="holdings-meta">
+        <span class="holdings-title">
+          重仓股票 <span class="coverage-pct">{{ (totalCoverage * 100).toFixed(2) }}%</span>
+        </span>
+        <span class="report-date">更新于 {{ reportDate }}</span>
+      </div>
+      <div class="holdings-header">
+        <span>股票</span>
+        <span class="col-right">涨幅</span>
+        <span class="col-right">持仓占比</span>
+        <span class="col-right">贡献</span>
+      </div>
+      <div
+        v-for="row in holdingRows"
+        :key="row.stock_code"
+        class="holding-row"
+      >
+        <span class="stock-info">
+          <span class="stock-name">{{ row.stock_name }}</span>
+          <span class="stock-code">{{ row.stock_code }}</span>
+        </span>
+        <span class="col-right" :class="row.change_pct !== null ? pctClass(row.change_pct) : 'na'">
+          {{ row.change_pct !== null ? formatPct(row.change_pct) : '—' }}
+        </span>
+        <span class="col-right">{{ (row.holding_ratio * 100).toFixed(2) }}%</span>
+        <span class="col-right" :class="row.contribution !== null ? pctClass(row.contribution) : 'na'">
+          {{ row.contribution !== null ? (row.contribution > 0 ? '+' : '') + row.contribution.toFixed(4) : '—' }}
+        </span>
       </div>
     </div>
   </div>
@@ -248,19 +285,39 @@ onMounted(load)
   color: #00c853;
 }
 
-.holdings {
-  border-top: 1px solid #e8e8e8;
-  padding-top: 12px;
+.holdings-card {
+  background: #fff;
+  border: 1px solid #e8e8e8;
+  border-radius: 8px;
+  padding: 16px;
+  margin-top: 16px;
 }
 
-.holdings h4 {
-  margin: 0 0 8px 0;
+.holdings-meta {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-bottom: 12px;
+}
+
+.holdings-title {
   font-size: 14px;
+  font-weight: 600;
+  color: #333;
+}
+
+.coverage-pct {
+  color: #1677ff;
+}
+
+.report-date {
+  font-size: 12px;
+  color: #bbb;
 }
 
 .holdings-header {
   display: grid;
-  grid-template-columns: 2fr 1fr 1fr 1fr 1fr;
+  grid-template-columns: 2fr 1fr 1fr 1fr;
   font-size: 11px;
   color: #999;
   padding: 6px 0;
@@ -269,16 +326,38 @@ onMounted(load)
 
 .holding-row {
   display: grid;
-  grid-template-columns: 2fr 1fr 1fr 1fr 1fr;
+  grid-template-columns: 2fr 1fr 1fr 1fr;
   font-size: 13px;
   padding: 8px 0;
   border-bottom: 1px solid #f8f8f8;
+  align-items: center;
+}
+
+.col-right {
+  text-align: right;
+}
+
+.stock-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  overflow: hidden;
 }
 
 .stock-name {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  font-size: 13px;
+}
+
+.stock-code {
+  font-size: 11px;
+  color: #bbb;
+}
+
+.na {
+  color: #ccc;
 }
 
 .hint {

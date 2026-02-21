@@ -91,6 +91,13 @@ export interface IndexIntradayData {
   name: string
 }
 
+export interface FundHolding {
+  stock_code: string
+  stock_name: string
+  holding_ratio: number
+  report_date: string
+}
+
 export interface FundSearchResult {
   fund_code: string
   fund_name: string
@@ -109,7 +116,7 @@ export const api = {
 
   getFundEstimate: (code: string) => request<FundEstimate>(`/api/fund/${code}/estimate`),
 
-  getFundHoldings: (code: string) => request<unknown[]>(`/api/fund/${code}/holdings`),
+  getFundHoldings: (code: string) => request<FundHolding[]>(`/api/fund/${code}/holdings`),
 
   listPortfolios: () => request<PortfolioSummary[]>('/api/portfolio'),
 
