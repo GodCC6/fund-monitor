@@ -60,7 +60,8 @@ async def update_stock_quotes():
             logger.info(f"Updated {len(quotes)} stock quotes")
 
             # Save estimate snapshots
-            now = datetime.now()
+            # Always use CST timezone so times align with East Money index times
+            now = datetime.now(_CST)
             snapshot_date = now.strftime("%Y-%m-%d")
             snapshot_time = now.strftime("%H:%M")
 

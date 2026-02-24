@@ -120,7 +120,9 @@ class MarketDataService:
 
             result = {}
             for item in data["data"]["diff"]:
-                code = str(item["f12"])
+                # Ensure 6-digit A-share code (API may return integer, dropping
+                # leading zeros for SZ stocks like "000001" → "1")
+                code = str(item["f12"]).zfill(6)
                 price = item.get("f2")
                 change_pct = item.get("f3")
                 if price is None or price == "-" or change_pct is None or change_pct == "-":

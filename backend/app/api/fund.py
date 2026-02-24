@@ -7,6 +7,7 @@ from app.models.database import get_db
 from app.services.fund_info import fund_info_service
 from app.services.market_data import market_data_service
 from app.services.estimator import fund_estimator
+from app.services.cache import stock_cache
 from app.api.schemas import FundResponse, FundEstimateResponse, HoldingResponse
 
 router = APIRouter(prefix="/api/fund", tags=["fund"])
@@ -81,7 +82,18 @@ async def get_estimate(fund_code: str, db: AsyncSession = Depends(get_db)):
         raise HTTPException(status_code=400, detail="No holdings data available")
 
     stock_codes = [h.stock_code for h in holdings]
-    stock_quotes = market_data_service.get_stock_quotes(stock_codes)
+
+    # Prefer scheduler-populated cache to avoid redundant HTTP calls and
+    # improve reliability (East Money API can be rate-limited or slow).
+    stock_quotes: dict = {}
+    for code in stock_codes:
+        cached = stock_cache.get(f"stock:{code}")
+        if cached is not None:
+            stock_quotes[code] = cached
+
+    # Fall back to live fetch if cache is empty (e.g. scheduler hasn't run yet)
+    if not stock_quotes:
+        stock_quotes = market_data_service.get_stock_quotes(stock_codes)
 
     holdings_data = [
         {

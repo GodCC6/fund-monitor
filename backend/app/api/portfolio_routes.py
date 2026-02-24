@@ -11,6 +11,7 @@ from app.services.portfolio import portfolio_service
 from app.services.fund_info import fund_info_service
 from app.services.market_data import market_data_service
 from app.services.estimator import fund_estimator
+from app.services.cache import stock_cache
 from app.api.schemas import (
     PortfolioCreateRequest,
     PortfolioRenameRequest,
@@ -70,7 +71,14 @@ async def get_portfolio_detail(portfolio_id: int, db: AsyncSession = Depends(get
             if holdings:
                 holdings_date = holdings[0].report_date
                 stock_codes = [h.stock_code for h in holdings]
-                quotes = market_data_service.get_stock_quotes(stock_codes)
+                # Prefer scheduler-populated cache over redundant live HTTP calls
+                quotes: dict = {}
+                for _code in stock_codes:
+                    _cached = stock_cache.get(f"stock:{_code}")
+                    if _cached is not None:
+                        quotes[_code] = _cached
+                if not quotes:
+                    quotes = market_data_service.get_stock_quotes(stock_codes)
                 holdings_data = [
                     {
                         "stock_code": h.stock_code,
