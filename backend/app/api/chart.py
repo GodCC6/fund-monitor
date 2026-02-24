@@ -1,7 +1,10 @@
 """Chart data API routes."""
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter, Depends, HTTPException, Query
+
+# China Standard Time (UTC+8)
+_CST = timezone(timedelta(hours=8))
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -107,10 +110,16 @@ async def get_index_intraday():
     values = []
     for t in trends:
         parts = t.split(",")
-        # parts[0] = "2026-02-13 09:30", parts[1] = price
+        if len(parts) < 2:
+            continue
+        try:
+            val = float(parts[1])
+        except (ValueError, TypeError):
+            # Skip pre-open and lunch-break entries where price is "-"
+            continue
         time_str = parts[0].split(" ")[1] if " " in parts[0] else parts[0]
         times.append(time_str)
-        values.append(float(parts[1]))
+        values.append(val)
 
     return {"times": times, "values": values, "pre_close": pre_close, "name": "沪深300"}
 
@@ -176,7 +185,7 @@ async def get_intraday(
     if fund is None:
         raise HTTPException(status_code=404, detail="Fund not found")
 
-    today_str = datetime.now().strftime("%Y-%m-%d")
+    today_str = datetime.now(_CST).strftime("%Y-%m-%d")
 
     # Find the most recent snapshot date so non-trading days fall back to last
     # trading day's data instead of returning empty.

@@ -2,8 +2,11 @@
 
 import logging
 import time
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 from typing import Any
+
+# China Standard Time (UTC+8)
+_CST = timezone(timedelta(hours=8))
 
 import akshare as ak
 import httpx
@@ -57,8 +60,9 @@ class MarketDataService:
         On weekends and public holidays the endpoint returns the last trading
         day's data, whose date will not match today.
         """
-        today_str = datetime.now().strftime("%Y-%m-%d")
-        if datetime.now().weekday() >= 5:  # Saturday or Sunday
+        now_cst = datetime.now(_CST)
+        today_str = now_cst.strftime("%Y-%m-%d")
+        if now_cst.weekday() >= 5:  # Saturday or Sunday
             return False
         try:
             url = (
@@ -109,12 +113,16 @@ class MarketDataService:
                 code = str(item["f12"])
                 price = item.get("f2")
                 change_pct = item.get("f3")
-                if price is not None and price != "-" and change_pct is not None:
+                if price is None or price == "-" or change_pct is None or change_pct == "-":
+                    continue
+                try:
                     result[code] = {
                         "price": float(price),
                         "change_pct": float(change_pct),
                         "name": str(item.get("f14", "")),
                     }
+                except (ValueError, TypeError):
+                    continue
             return result
         except Exception as e:
             logger.error(f"Failed to fetch stock quotes: {e}")

@@ -1,10 +1,13 @@
 """Background task scheduler for periodic market data updates."""
 
 import logging
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.interval import IntervalTrigger
 from apscheduler.triggers.cron import CronTrigger
+
+# China Standard Time (UTC+8) — used for all trading-hours checks and cron triggers
+_CST = timezone(timedelta(hours=8))
 
 from app.services.market_data import market_data_service
 from app.services.cache import stock_cache
@@ -20,8 +23,8 @@ scheduler = AsyncIOScheduler()
 
 
 def is_trading_hours() -> bool:
-    """Check if current time is within A-share trading hours."""
-    now = datetime.now()
+    """Check if current time is within A-share trading hours (China Standard Time)."""
+    now = datetime.now(_CST)
     # Skip weekends
     if now.weekday() >= 5:
         return False
@@ -193,13 +196,13 @@ def start_scheduler():
     )
     scheduler.add_job(
         save_portfolio_snapshots,
-        trigger=CronTrigger(hour=15, minute=5, day_of_week="mon-fri"),
+        trigger=CronTrigger(hour=15, minute=5, day_of_week="mon-fri", timezone=_CST),
         id="save_portfolio_snapshots",
         replace_existing=True,
     )
     scheduler.add_job(
         refresh_all_fund_navs,
-        trigger=CronTrigger(hour=20, minute=30, day_of_week="mon-fri"),
+        trigger=CronTrigger(hour=20, minute=30, day_of_week="mon-fri", timezone=_CST),
         id="refresh_all_fund_navs",
         replace_existing=True,
     )
