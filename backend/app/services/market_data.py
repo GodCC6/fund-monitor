@@ -9,7 +9,7 @@ from typing import Any
 _CST = timezone(timedelta(hours=8))
 
 import akshare as ak
-import httpx
+import requests
 import pandas as pd
 
 logger = logging.getLogger(__name__)
@@ -79,7 +79,7 @@ class MarketDataService:
                 "https://push2.eastmoney.com/api/qt/stock/trends2/get"
                 "?secid=1.000300&fields1=f2&fields2=f51&iscr=0&ndays=1"
             )
-            resp = httpx.get(url, timeout=5, headers=_EM_HEADERS)
+            resp = requests.get(url, timeout=5, headers=_EM_HEADERS)
             data = resp.json()
             trends = (data.get("data") or {}).get("trends", [])
             if not trends:
@@ -112,7 +112,7 @@ class MarketDataService:
                 f"https://push2.eastmoney.com/api/qt/ulist.np/get"
                 f"?fltt=2&fields=f2,f3,f12,f14&secids={secids}"
             )
-            resp = httpx.get(url, timeout=10, headers=_EM_HEADERS)
+            resp = requests.get(url, timeout=10, headers=_EM_HEADERS)
             data = resp.json()
 
             if not data.get("data") or not (data.get("data") or {}).get("diff"):

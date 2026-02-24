@@ -35,7 +35,7 @@ async def get_index_history(
     period: str = Query("30d", pattern="^(7d|30d|ytd|1y|3y)$"),
 ):
     """Get CSI 300 index historical close prices."""
-    import httpx as hx
+    import requests
 
     today = datetime.now()
     if period == "7d":
@@ -61,7 +61,7 @@ async def get_index_history(
             f"?secid=1.000300&fields1=f1,f2,f3&fields2=f51,f52"
             f"&klt=101&fqt=1&beg={beg}&end={end}"
         )
-        resp = hx.get(url, timeout=10, headers=_EM_HEADERS)
+        resp = requests.get(url, timeout=10, headers=_EM_HEADERS)
         data = resp.json()
         klines = (data.get("data") or {}).get("klines", [])
     except Exception:
@@ -102,14 +102,14 @@ async def get_index_history(
 @router.get("/index/intraday")
 async def get_index_intraday():
     """Get CSI 300 index intraday minute-level data."""
-    import httpx as hx
+    import requests
 
     try:
         url = (
             "https://push2.eastmoney.com/api/qt/stock/trends2/get"
             "?secid=1.000300&fields1=f1,f2,f3&fields2=f51,f52,f53&iscr=0&ndays=1"
         )
-        resp = hx.get(url, timeout=10, headers=_EM_HEADERS)
+        resp = requests.get(url, timeout=10, headers=_EM_HEADERS)
         data = resp.json()
         raw = data.get("data") or {}
         trends = raw.get("trends", [])

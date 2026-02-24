@@ -84,15 +84,19 @@ async function loadData() {
         noFundIntraday.value = true
       }
 
+      // Use index times as base when available; fall back to fund times when index is empty
+      const baseTimes = indexData.times.length > 0 ? indexData.times : fundData.times
+      const hasIndex = indexData.times.length > 0
+
       const xData: string[] = []
       const fundNavs: number[] = []
       const indexValues: number[] = []
       let lastFundNav = fundData.last_nav
 
-      for (let i = 0; i < indexData.times.length; i++) {
-        const t = indexData.times[i]!
+      for (let i = 0; i < baseTimes.length; i++) {
+        const t = baseTimes[i]!
         xData.push(t)
-        indexValues.push(indexData.values[i]!)
+        if (hasIndex) indexValues.push(indexData.values[i]!)
         if (fundMap.has(t)) {
           lastFundNav = fundMap.get(t)!
         }
@@ -122,7 +126,8 @@ async function loadData() {
       const xData: string[] = []
       const fundNavs: number[] = []
       const indexValues: number[] = []
-      let lastIndex = indexData.values.length > 0 ? indexData.values[0]! : 0
+      const hasHistIndex = indexData.dates.length > 0
+      let lastIndex = hasHistIndex ? indexData.values[0]! : 0
 
       for (let i = 0; i < fundData.dates.length; i++) {
         const d = fundData.dates[i]!
@@ -131,7 +136,7 @@ async function loadData() {
         if (indexMap.has(d)) {
           lastIndex = indexMap.get(d)!
         }
-        indexValues.push(lastIndex)
+        if (hasHistIndex) indexValues.push(lastIndex)
       }
 
       chartData = { xData, fundNavs, indexValues, indexName: indexData.name }
@@ -173,9 +178,14 @@ async function loadData() {
         },
       },
       legend: {
-        data: activePeriod.value === '1d' && noFundIntraday.value
-          ? [chartData.indexName]
-          : ['基金净值', chartData.indexName],
+        data: (() => {
+          const showFund = !(activePeriod.value === '1d' && noFundIntraday.value)
+          const showIndex = chartData.indexValues.length > 0
+          const items: string[] = []
+          if (showFund) items.push('基金净值')
+          if (showIndex) items.push(chartData.indexName)
+          return items
+        })(),
         top: 0,
         textStyle: { fontSize: 12 },
       },
@@ -219,14 +229,15 @@ async function loadData() {
           lineStyle: { color: fundColor, width: 2 },
           areaStyle: { color: fundAreaColor },
         }]),
-        {
+        // Only render index series when there is actual index data
+        ...(chartData.indexValues.length > 0 ? [{
           name: chartData.indexName,
           type: 'line',
           data: indexPcts,
           smooth: false,
           symbol: 'none',
           lineStyle: { color: indexColor, width: 1.5, type: 'dashed' },
-        },
+        }] : []),
       ],
     }, true)
 
