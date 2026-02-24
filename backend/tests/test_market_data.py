@@ -30,7 +30,7 @@ class TestGetStockQuote:
                 {"f2": 1800.0, "f3": 2.5, "f12": "600519", "f14": "贵州茅台"},
             ]
         )
-        with patch("app.services.market_data.httpx.get", return_value=mock_resp):
+        with patch("app.services.market_data.requests.get", return_value=mock_resp):
             result = market_service.get_stock_quotes(["600519"])
             assert "600519" in result
             assert result["600519"]["price"] == 1800.0
@@ -43,21 +43,21 @@ class TestGetStockQuote:
                 {"f2": 150.0, "f3": -1.2, "f12": "000858", "f14": "五粮液"},
             ]
         )
-        with patch("app.services.market_data.httpx.get", return_value=mock_resp):
+        with patch("app.services.market_data.requests.get", return_value=mock_resp):
             result = market_service.get_stock_quotes(["600519", "000858"])
             assert len(result) == 2
             assert result["000858"]["change_pct"] == -1.2
 
     def test_stock_not_found(self, market_service):
         mock_resp = self._mock_eastmoney_response([])
-        with patch("app.services.market_data.httpx.get", return_value=mock_resp):
+        with patch("app.services.market_data.requests.get", return_value=mock_resp):
             result = market_service.get_stock_quotes(["999999"])
             assert len(result) == 0
 
     def test_hk_stock_skipped(self, market_service):
         """Hong Kong stock codes (starting with 0 but 5 digits) should be filtered."""
         mock_resp = self._mock_eastmoney_response([])
-        with patch("app.services.market_data.httpx.get", return_value=mock_resp):
+        with patch("app.services.market_data.requests.get", return_value=mock_resp):
             # 00700 is HK Tencent - _get_secid returns "" for unsupported
             result = market_service.get_stock_quotes(["00700"])
             # 00700 starts with "0" so it maps to 0.00700, might still query
