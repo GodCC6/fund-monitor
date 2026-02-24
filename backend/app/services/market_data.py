@@ -18,6 +18,16 @@ logger = logging.getLogger(__name__)
 _nav_history_cache: dict[str, tuple[float, dict[str, float]]] = {}
 _NAV_HISTORY_CACHE_TTL = 3600  # 1 hour
 
+# Browser-like headers to avoid anti-bot blocking on eastmoney APIs
+_EM_HEADERS = {
+    "User-Agent": (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) "
+        "Chrome/120.0.0.0 Safari/537.36"
+    ),
+    "Referer": "https://finance.eastmoney.com/",
+}
+
 
 # Eastmoney market prefix: 沪市=1, 深市=0
 def _get_secid(stock_code: str) -> str:
@@ -69,9 +79,9 @@ class MarketDataService:
                 "https://push2.eastmoney.com/api/qt/stock/trends2/get"
                 "?secid=1.000300&fields1=f2&fields2=f51&iscr=0&ndays=1"
             )
-            resp = httpx.get(url, timeout=5)
+            resp = httpx.get(url, timeout=5, headers=_EM_HEADERS)
             data = resp.json()
-            trends = data.get("data", {}).get("trends", [])
+            trends = (data.get("data") or {}).get("trends", [])
             if not trends:
                 return False
             # Entry format: "2026-02-13 09:30"
@@ -102,10 +112,10 @@ class MarketDataService:
                 f"https://push2.eastmoney.com/api/qt/ulist.np/get"
                 f"?fltt=2&fields=f2,f3,f12,f14&secids={secids}"
             )
-            resp = httpx.get(url, timeout=10)
+            resp = httpx.get(url, timeout=10, headers=_EM_HEADERS)
             data = resp.json()
 
-            if not data.get("data") or not data["data"].get("diff"):
+            if not data.get("data") or not (data.get("data") or {}).get("diff"):
                 return {}
 
             result = {}

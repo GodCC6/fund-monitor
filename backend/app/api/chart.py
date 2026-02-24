@@ -2,9 +2,6 @@
 
 from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter, Depends, HTTPException, Query
-
-# China Standard Time (UTC+8)
-_CST = timezone(timedelta(hours=8))
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -12,6 +9,19 @@ from app.models.database import get_db
 from app.models.fund import FundEstimateSnapshot
 from app.services.fund_info import fund_info_service
 from app.services.market_data import market_data_service
+
+# China Standard Time (UTC+8)
+_CST = timezone(timedelta(hours=8))
+
+# Browser-like headers to avoid anti-bot blocking on eastmoney APIs
+_EM_HEADERS = {
+    "User-Agent": (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) "
+        "Chrome/120.0.0.0 Safari/537.36"
+    ),
+    "Referer": "https://finance.eastmoney.com/",
+}
 
 router = APIRouter(prefix="/api/fund", tags=["chart"])
 
@@ -51,11 +61,11 @@ async def get_index_history(
             f"?secid=1.000300&fields1=f1,f2,f3&fields2=f51,f52"
             f"&klt=101&fqt=1&beg={beg}&end={end}"
         )
-        resp = hx.get(url, timeout=10)
+        resp = hx.get(url, timeout=10, headers=_EM_HEADERS)
         data = resp.json()
-        klines = data.get("data", {}).get("klines", [])
+        klines = (data.get("data") or {}).get("klines", [])
     except Exception:
-        return {"dates": [], "values": []}
+        return {"dates": [], "values": [], "name": "沪深300"}
 
     # Parse klines: "date,close" — f51=date, f52=close
     dates = []
@@ -99,10 +109,11 @@ async def get_index_intraday():
             "https://push2.eastmoney.com/api/qt/stock/trends2/get"
             "?secid=1.000300&fields1=f1,f2,f3&fields2=f51,f52,f53&iscr=0&ndays=1"
         )
-        resp = hx.get(url, timeout=10)
+        resp = hx.get(url, timeout=10, headers=_EM_HEADERS)
         data = resp.json()
-        trends = data.get("data", {}).get("trends", [])
-        pre_close = data.get("data", {}).get("preClose", 0)
+        raw = data.get("data") or {}
+        trends = raw.get("trends", [])
+        pre_close = raw.get("preClose", 0)
     except Exception:
         return {"times": [], "values": [], "name": "沪深300"}
 
