@@ -29,17 +29,6 @@ _EM_HEADERS = {
 }
 
 
-# Eastmoney market prefix: 沪市=1, 深市=0
-def _get_secid(stock_code: str) -> str:
-    """Convert stock code to eastmoney secid format."""
-    if stock_code.startswith(("6", "9")):
-        return f"1.{stock_code}"
-    elif stock_code.startswith(("0", "3", "2")):
-        return f"0.{stock_code}"
-    else:
-        # 港股等暂不支持
-        return ""
-
 
 class MarketDataService:
     """Fetches market data from akshare."""
@@ -91,53 +80,39 @@ class MarketDataService:
             return True  # If check fails, assume market is open
 
     def get_stock_quotes(self, stock_codes: list[str]) -> dict[str, dict[str, Any]]:
-        """Get real-time quotes for a list of stock codes.
+        """Get real-time quotes for a list of stock codes via akshare.
 
-        Uses eastmoney batch API for fast retrieval (only requested stocks).
         Returns dict mapping stock_code -> {price, change_pct, name}.
         """
+        if not stock_codes:
+            return {}
         try:
-            # Build secids, filtering out unsupported codes (e.g. HK stocks)
-            secid_map = {}
-            for code in stock_codes:
-                secid = _get_secid(code)
-                if secid:
-                    secid_map[code] = secid
-
-            if not secid_map:
+            df = ak.stock_zh_a_spot_em()
+            if df.empty:
                 return {}
 
-            secids = ",".join(secid_map.values())
-            url = (
-                f"https://push2.eastmoney.com/api/qt/ulist.np/get"
-                f"?fltt=2&fields=f2,f3,f12,f14&secids={secids}"
-            )
-            resp = requests.get(url, timeout=10, headers=_EM_HEADERS)
-            data = resp.json()
-
-            if not data.get("data") or not (data.get("data") or {}).get("diff"):
-                return {}
-
+            # akshare returns all A-shares; filter to requested codes
+            # Column names: 代码, 名称, 最新价, 涨跌幅, ...
+            code_set = set(stock_codes)
             result = {}
-            for item in data["data"]["diff"]:
-                # Ensure 6-digit A-share code (API may return integer, dropping
-                # leading zeros for SZ stocks like "000001" → "1")
-                code = str(item["f12"]).zfill(6)
-                price = item.get("f2")
-                change_pct = item.get("f3")
-                if price is None or price == "-" or change_pct is None or change_pct == "-":
+            for _, row in df.iterrows():
+                code = str(row.get("代码", "")).zfill(6)
+                if code not in code_set:
                     continue
                 try:
+                    price = float(row["最新价"])
+                    change_pct = float(row["涨跌幅"])
+                    name = str(row.get("名称", ""))
                     result[code] = {
-                        "price": float(price),
-                        "change_pct": float(change_pct),
-                        "name": str(item.get("f14", "")),
+                        "price": price,
+                        "change_pct": change_pct,
+                        "name": name,
                     }
-                except (ValueError, TypeError):
+                except (ValueError, TypeError, KeyError):
                     continue
             return result
         except Exception as e:
-            logger.error(f"Failed to fetch stock quotes: {e}")
+            logger.error(f"Failed to fetch stock quotes via akshare: {e}")
             return {}
 
     def get_fund_holdings(self, fund_code: str, year: str) -> list[dict[str, Any]]:

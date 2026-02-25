@@ -13,16 +13,6 @@ from app.services.market_data import market_data_service
 # China Standard Time (UTC+8)
 _CST = timezone(timedelta(hours=8))
 
-# Browser-like headers to avoid anti-bot blocking on eastmoney APIs
-_EM_HEADERS = {
-    "User-Agent": (
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-        "AppleWebKit/537.36 (KHTML, like Gecko) "
-        "Chrome/120.0.0.0 Safari/537.36"
-    ),
-    "Referer": "https://finance.eastmoney.com/",
-}
-
 router = APIRouter(prefix="/api/fund", tags=["chart"])
 
 
@@ -34,12 +24,12 @@ router = APIRouter(prefix="/api/fund", tags=["chart"])
 async def get_index_history(
     period: str = Query("30d", pattern="^(7d|30d|ytd|1y|3y)$"),
 ):
-    """Get CSI 300 index historical close prices."""
-    import requests
+    """Get CSI 300 index historical close prices via akshare."""
+    import akshare as ak
 
-    today = datetime.now()
+    today = datetime.now(_CST)
     if period == "7d":
-        cutoff = today - timedelta(days=10)  # extra days for weekends
+        cutoff = today - timedelta(days=10)
     elif period == "30d":
         cutoff = today - timedelta(days=45)
     elif period == "ytd":
@@ -51,31 +41,21 @@ async def get_index_history(
     else:
         cutoff = today - timedelta(days=45)
 
-    beg = cutoff.strftime("%Y%m%d")
-    end = today.strftime("%Y%m%d")
-
     try:
-        # secid=1.000300 is CSI 300
-        url = (
-            f"https://push2his.eastmoney.com/api/qt/stock/kline/get"
-            f"?secid=1.000300&fields1=f1,f2,f3&fields2=f51,f52"
-            f"&klt=101&fqt=1&beg={beg}&end={end}"
+        df = ak.index_zh_a_hist(
+            symbol="000300",
+            period="daily",
+            start_date=cutoff.strftime("%Y%m%d"),
+            end_date=today.strftime("%Y%m%d"),
         )
-        resp = requests.get(url, timeout=10, headers=_EM_HEADERS)
-        data = resp.json()
-        klines = (data.get("data") or {}).get("klines", [])
+        if df.empty:
+            return {"dates": [], "values": [], "name": "沪深300"}
+        dates = [str(d)[:10] for d in df["日期"].tolist()]
+        values = [float(v) for v in df["收盘"].tolist()]
     except Exception:
         return {"dates": [], "values": [], "name": "沪深300"}
 
-    # Parse klines: "date,close" — f51=date, f52=close
-    dates = []
-    values = []
-    for k in klines:
-        parts = k.split(",")
-        dates.append(parts[0])
-        values.append(float(parts[1]))  # close price is second field (f52)
-
-    # Now filter to match the exact period cutoff
+    # Filter to exact period cutoff
     if period == "7d":
         real_cutoff = (today - timedelta(days=7)).strftime("%Y-%m-%d")
     elif period == "30d":
@@ -89,48 +69,48 @@ async def get_index_history(
     else:
         real_cutoff = (today - timedelta(days=30)).strftime("%Y-%m-%d")
 
-    filtered_dates = []
-    filtered_values = []
-    for d, v in zip(dates, values):
-        if d >= real_cutoff:
-            filtered_dates.append(d)
-            filtered_values.append(v)
+    filtered_dates = [d for d in dates if d >= real_cutoff]
+    filtered_values = [v for d, v in zip(dates, values) if d >= real_cutoff]
 
     return {"dates": filtered_dates, "values": filtered_values, "name": "沪深300"}
 
 
 @router.get("/index/intraday")
 async def get_index_intraday():
-    """Get CSI 300 index intraday minute-level data."""
-    import requests
+    """Get CSI 300 index intraday minute-level data via akshare."""
+    import akshare as ak
+
+    today = datetime.now(_CST)
+    today_str = today.strftime("%Y-%m-%d")
+    start_dt = today_str + " 09:25:00"
+    end_dt = today.strftime("%Y-%m-%d %H:%M:%S")
 
     try:
-        url = (
-            "https://push2.eastmoney.com/api/qt/stock/trends2/get"
-            "?secid=1.000300&fields1=f1,f2,f3&fields2=f51,f52,f53&iscr=0&ndays=1"
+        df = ak.index_zh_a_hist_min_em(
+            symbol="000300",
+            period="1",
+            start_date=start_dt,
+            end_date=end_dt,
         )
-        resp = requests.get(url, timeout=10, headers=_EM_HEADERS)
-        data = resp.json()
-        raw = data.get("data") or {}
-        trends = raw.get("trends", [])
-        pre_close = raw.get("preClose", 0)
-    except Exception:
-        return {"times": [], "values": [], "name": "沪深300"}
+        if df.empty:
+            return {"times": [], "values": [], "pre_close": 0, "name": "沪深300"}
 
-    times = []
-    values = []
-    for t in trends:
-        parts = t.split(",")
-        if len(parts) < 2:
-            continue
-        try:
-            val = float(parts[1])
-        except (ValueError, TypeError):
-            # Skip pre-open and lunch-break entries where price is "-"
-            continue
-        time_str = parts[0].split(" ")[1] if " " in parts[0] else parts[0]
-        times.append(time_str)
-        values.append(val)
+        times = []
+        values = []
+        for _, row in df.iterrows():
+            time_raw = str(row["时间"])
+            # Format: "YYYY-MM-DD HH:MM:00" → extract "HH:MM"
+            t = time_raw.split(" ")[1][:5] if " " in time_raw else time_raw[:5]
+            try:
+                val = float(row["收盘"])
+            except (ValueError, TypeError):
+                continue
+            times.append(t)
+            values.append(val)
+
+        pre_close = values[0] if values else 0
+    except Exception:
+        return {"times": [], "values": [], "pre_close": 0, "name": "沪深300"}
 
     return {"times": times, "values": values, "pre_close": pre_close, "name": "沪深300"}
 
