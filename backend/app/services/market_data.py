@@ -91,18 +91,50 @@ class MarketDataService:
             if df.empty:
                 return {}
 
-            # akshare returns all A-shares; filter to requested codes
-            # Column names: 代码, 名称, 最新价, 涨跌幅, ...
+            cols = df.columns.tolist()
+            logger.debug(f"stock_zh_a_spot_em columns ({len(cols)}): {cols}")
+
+            # Detect actual column names defensively across akshare versions
+            code_col = next(
+                (c for c in ["代码", "股票代码", "symbol"] if c in cols), None
+            )
+            price_col = next(
+                (c for c in ["最新价", "现价", "price"] if c in cols), None
+            )
+            change_col = next(
+                (c for c in ["涨跌幅", "涨跌幅(%)", "change_pct"] if c in cols), None
+            )
+            name_col = next(
+                (c for c in ["名称", "股票名称", "name"] if c in cols), None
+            )
+
+            if not code_col:
+                logger.error(f"Cannot find stock code column in akshare output: {cols}")
+                return {}
+            if not price_col:
+                logger.error(f"Cannot find price column in akshare output: {cols}")
+                return {}
+            if not change_col:
+                logger.error(f"Cannot find change_pct column in akshare output: {cols}")
+                return {}
+
             code_set = set(stock_codes)
             result = {}
             for _, row in df.iterrows():
-                code = str(row.get("代码", "")).zfill(6)
+                raw_code = row.get(code_col, "") if code_col else ""
+                code = str(raw_code or "").strip().zfill(6)
                 if code not in code_set:
                     continue
                 try:
-                    price = float(row["最新价"])
-                    change_pct = float(row["涨跌幅"])
-                    name = str(row.get("名称", ""))
+                    price_raw = row[price_col]
+                    change_raw = row[change_col]
+                    # Skip rows with null/non-numeric values (e.g. suspended stocks,
+                    # or intraday fields not available after market hours)
+                    if pd.isna(price_raw) or pd.isna(change_raw):
+                        continue
+                    price = float(price_raw)
+                    change_pct = float(change_raw)
+                    name = str(row.get(name_col, "") or "") if name_col else ""
                     result[code] = {
                         "price": price,
                         "change_pct": change_pct,
@@ -112,7 +144,7 @@ class MarketDataService:
                     continue
             return result
         except Exception as e:
-            logger.error(f"Failed to fetch stock quotes via akshare: {e}")
+            logger.error(f"Failed to fetch stock quotes via akshare: {e}", exc_info=True)
             return {}
 
     def get_fund_holdings(self, fund_code: str, year: str) -> list[dict[str, Any]]:

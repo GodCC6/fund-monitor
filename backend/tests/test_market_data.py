@@ -58,6 +58,43 @@ class TestGetStockQuote:
             result = market_service.get_stock_quotes(["00700"])
             assert isinstance(result, dict)
 
+    def test_nan_change_pct_skipped(self, market_service):
+        """Stocks with NaN change_pct (e.g. suspended or after-hours null) are skipped."""
+        import numpy as np
+        mock_df = pd.DataFrame({
+            "代码": ["600519", "000858"],
+            "名称": ["贵州茅台", "五粮液"],
+            "最新价": [1800.0, float("nan")],
+            "涨跌幅": [float("nan"), -1.2],
+        })
+        with patch("app.services.market_data.ak.stock_zh_a_spot_em", return_value=mock_df):
+            result = market_service.get_stock_quotes(["600519", "000858"])
+            # 600519 has nan change_pct → skipped; 000858 has nan price → skipped
+            assert len(result) == 0
+
+    def test_missing_code_column_returns_empty(self, market_service):
+        """If akshare returns unexpected columns, return {} rather than crashing."""
+        mock_df = pd.DataFrame({
+            "code_id": ["600519"],  # not in any recognised column name list
+            "最新价": [1800.0],
+            "涨跌幅": [2.5],
+        })
+        with patch("app.services.market_data.ak.stock_zh_a_spot_em", return_value=mock_df):
+            result = market_service.get_stock_quotes(["600519"])
+            assert result == {}
+
+    def test_dash_string_values_skipped(self, market_service):
+        """Rows where price or change_pct is '-' (non-numeric string) are skipped."""
+        mock_df = pd.DataFrame({
+            "代码": ["600519"],
+            "名称": ["贵州茅台"],
+            "最新价": ["-"],
+            "涨跌幅": ["-"],
+        })
+        with patch("app.services.market_data.ak.stock_zh_a_spot_em", return_value=mock_df):
+            result = market_service.get_stock_quotes(["600519"])
+            assert len(result) == 0
+
 
 class TestGetFundHoldings:
     def test_get_fund_top_holdings(self, market_service):

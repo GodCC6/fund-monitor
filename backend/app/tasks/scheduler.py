@@ -84,6 +84,16 @@ async def update_stock_quotes():
                     holdings_data, quotes, fund.last_nav
                 )
 
+                # Skip snapshot when no quotes matched holdings (coverage=0):
+                # saving est_change_pct=0 would overwrite the last valid snapshot
+                # with misleading zero data.
+                if estimate["coverage"] <= 0:
+                    logger.warning(
+                        f"Skipping snapshot for {fund.fund_code}: "
+                        f"coverage={estimate['coverage']}, quotes={len(quotes)}"
+                    )
+                    continue
+
                 snapshot = FundEstimateSnapshot(
                     fund_code=fund.fund_code,
                     est_nav=estimate["est_nav"],
