@@ -12,56 +12,50 @@ def market_service():
 
 
 class TestGetStockQuote:
-    def _mock_eastmoney_response(self, stocks: list[dict]):
-        """Helper to create a mock httpx response for eastmoney API."""
-        mock_resp = MagicMock()
-        mock_resp.json.return_value = {
-            "rc": 0,
-            "data": {
-                "total": len(stocks),
-                "diff": stocks,
-            },
-        }
-        return mock_resp
+    def _mock_akshare_df(self, stocks: list[dict]) -> pd.DataFrame:
+        """Helper to create a mock akshare DataFrame for stock_zh_a_spot_em."""
+        if not stocks:
+            return pd.DataFrame({"代码": [], "名称": [], "最新价": [], "涨跌幅": []})
+        return pd.DataFrame({
+            "代码": [s["code"] for s in stocks],
+            "名称": [s["name"] for s in stocks],
+            "最新价": [s["price"] for s in stocks],
+            "涨跌幅": [s["change_pct"] for s in stocks],
+        })
 
     def test_get_single_stock_quote(self, market_service):
-        mock_resp = self._mock_eastmoney_response(
-            [
-                {"f2": 1800.0, "f3": 2.5, "f12": "600519", "f14": "贵州茅台"},
-            ]
-        )
-        with patch("app.services.market_data.requests.get", return_value=mock_resp):
+        mock_df = self._mock_akshare_df([
+            {"code": "600519", "name": "贵州茅台", "price": 1800.0, "change_pct": 2.5},
+        ])
+        with patch("app.services.market_data.ak.stock_zh_a_spot_em", return_value=mock_df):
             result = market_service.get_stock_quotes(["600519"])
             assert "600519" in result
             assert result["600519"]["price"] == 1800.0
             assert result["600519"]["change_pct"] == 2.5
 
     def test_get_multiple_stock_quotes(self, market_service):
-        mock_resp = self._mock_eastmoney_response(
-            [
-                {"f2": 1800.0, "f3": 2.5, "f12": "600519", "f14": "贵州茅台"},
-                {"f2": 150.0, "f3": -1.2, "f12": "000858", "f14": "五粮液"},
-            ]
-        )
-        with patch("app.services.market_data.requests.get", return_value=mock_resp):
+        mock_df = self._mock_akshare_df([
+            {"code": "600519", "name": "贵州茅台", "price": 1800.0, "change_pct": 2.5},
+            {"code": "000858", "name": "五粮液", "price": 150.0, "change_pct": -1.2},
+        ])
+        with patch("app.services.market_data.ak.stock_zh_a_spot_em", return_value=mock_df):
             result = market_service.get_stock_quotes(["600519", "000858"])
             assert len(result) == 2
             assert result["000858"]["change_pct"] == -1.2
 
     def test_stock_not_found(self, market_service):
-        mock_resp = self._mock_eastmoney_response([])
-        with patch("app.services.market_data.requests.get", return_value=mock_resp):
+        mock_df = self._mock_akshare_df([
+            {"code": "600000", "name": "浦发银行", "price": 10.0, "change_pct": 0.5},
+        ])
+        with patch("app.services.market_data.ak.stock_zh_a_spot_em", return_value=mock_df):
             result = market_service.get_stock_quotes(["999999"])
             assert len(result) == 0
 
     def test_hk_stock_skipped(self, market_service):
-        """Hong Kong stock codes (starting with 0 but 5 digits) should be filtered."""
-        mock_resp = self._mock_eastmoney_response([])
-        with patch("app.services.market_data.requests.get", return_value=mock_resp):
-            # 00700 is HK Tencent - _get_secid returns "" for unsupported
+        """Hong Kong stock codes not present in A-share data should be absent from result."""
+        mock_df = self._mock_akshare_df([])
+        with patch("app.services.market_data.ak.stock_zh_a_spot_em", return_value=mock_df):
             result = market_service.get_stock_quotes(["00700"])
-            # 00700 starts with "0" so it maps to 0.00700, might still query
-            # The key point is the code doesn't crash
             assert isinstance(result, dict)
 
 
