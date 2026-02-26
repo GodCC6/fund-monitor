@@ -116,7 +116,7 @@ async def get_estimate(fund_code: str, db: AsyncSession = Depends(get_db)):
 
     holdings_data = [
         {
-            "stock_code": h.stock_code,
+            "stock_code": str(h.stock_code).zfill(6),
             "stock_name": h.stock_name,
             "holding_ratio": h.holding_ratio,
         }

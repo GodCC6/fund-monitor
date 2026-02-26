@@ -4,6 +4,8 @@ import time
 import threading
 from typing import Any
 
+from app.config import STOCK_CACHE_TTL, ESTIMATE_CACHE_TTL
+
 
 class CacheService:
     """Thread-safe in-memory cache with TTL support."""
@@ -39,6 +41,6 @@ class CacheService:
             self._store.clear()
 
 
-# Global cache instances
-stock_cache = CacheService(default_ttl=60)
-estimate_cache = CacheService(default_ttl=30)
+# Global cache instances — TTLs from config
+stock_cache = CacheService(default_ttl=STOCK_CACHE_TTL)
+estimate_cache = CacheService(default_ttl=ESTIMATE_CACHE_TTL)

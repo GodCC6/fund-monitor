@@ -76,7 +76,7 @@ async def update_stock_quotes():
 
                 holdings_data = [
                     {
-                        "stock_code": h.stock_code,
+                        "stock_code": str(h.stock_code).zfill(6),
                         "stock_name": h.stock_name,
                         "holding_ratio": h.holding_ratio,
                     }
@@ -137,7 +137,7 @@ async def save_portfolio_snapshots():
                     est_nav = fund.last_nav
                     holdings = await fund_info_service.get_holdings(session, pf.fund_code)
                     if holdings:
-                        stock_codes = [h.stock_code for h in holdings]
+                        stock_codes = [str(h.stock_code).zfill(6) for h in holdings]
                         quotes = {
                             k: stock_cache.get(f"stock:{k}")
                             for k in stock_codes
@@ -146,7 +146,7 @@ async def save_portfolio_snapshots():
                         if quotes:
                             holdings_data = [
                                 {
-                                    "stock_code": h.stock_code,
+                                    "stock_code": str(h.stock_code).zfill(6),
                                     "stock_name": h.stock_name,
                                     "holding_ratio": h.holding_ratio,
                                 }
