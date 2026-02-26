@@ -1,5 +1,7 @@
 """Fund API routes."""
 
+import logging
+
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -9,6 +11,8 @@ from app.services.market_data import market_data_service
 from app.services.estimator import fund_estimator
 from app.services.cache import stock_cache
 from app.api.schemas import FundResponse, FundEstimateResponse, HoldingResponse
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/fund", tags=["fund"])
 
@@ -68,19 +72,47 @@ async def get_estimate(fund_code: str, db: AsyncSession = Depends(get_db)):
     if not holdings:
         raise HTTPException(status_code=400, detail="No holdings data available")
 
-    stock_codes = [h.stock_code for h in holdings]
+    logger.info(f'Holdings: {[h.stock_code for h in holdings]}')
 
-    # Prefer scheduler-populated cache to avoid redundant HTTP calls and
-    # improve reliability (East Money API can be rate-limited or slow).
+    # Normalize all stock codes to 6-digit zero-padded strings to match cache keys
+    stock_codes = [str(h.stock_code).zfill(6) for h in holdings]
+    logger.info(f"[estimate] fund={fund_code} holdings({len(stock_codes)}): {stock_codes}")
+
+    # Prefer scheduler-populated cache (TTL=7d) to avoid redundant HTTP calls.
+    # With a long TTL the cache persists through non-trading hours and weekends,
+    # so the fallback is only needed on the very first run before any scheduler write.
     stock_quotes: dict = {}
     for code in stock_codes:
         cached = stock_cache.get(f"stock:{code}")
         if cached is not None:
             stock_quotes[code] = cached
 
-    # Fall back to live fetch if cache is empty (e.g. scheduler hasn't run yet)
+    logger.info(f'Cache hit: {len(stock_quotes)} / {len(stock_codes)}')
+    logger.info(
+        f"[estimate] fund={fund_code} cache hits={len(stock_quotes)}/{len(stock_codes)}"
+        f" keys={list(stock_quotes.keys())}"
+    )
+
+    # Fall back to live fetch only when cache is empty AND the market has traded
+    # today.  Guards against making slow paginated API calls on non-trading days
+    # or when the app starts fresh before the first scheduler run on a holiday.
     if not stock_quotes:
-        stock_quotes = market_data_service.get_stock_quotes(stock_codes)
+        is_trading = market_data_service.is_market_trading_today()
+        logger.info(
+            f"[estimate] fund={fund_code} cache empty, is_trading_today={is_trading}"
+        )
+        if is_trading:
+            stock_quotes = market_data_service.get_stock_quotes(stock_codes)
+            logger.info(
+                f"[estimate] fund={fund_code} live fetch returned"
+                f" {len(stock_quotes)} quotes, keys={list(stock_quotes.keys())}"
+            )
+
+    logger.info(f'Fallback quotes keys: {list(stock_quotes.keys())}')
+    logger.info(
+        f"[estimate] fund={fund_code} final quotes({len(stock_quotes)})"
+        f" keys={list(stock_quotes.keys())}"
+    )
 
     holdings_data = [
         {

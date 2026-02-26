@@ -55,7 +55,9 @@ async def update_stock_quotes():
 
             quotes = market_data_service.get_stock_quotes(list(all_stock_codes))
             for code, quote in quotes.items():
-                stock_cache.set(f"stock:{code}", quote)
+                # Ensure cache key always uses 6-digit zero-padded pure numeric code
+                normalized = str(code).zfill(6)
+                stock_cache.set(f"stock:{normalized}", quote)
 
             logger.info(f"Updated {len(quotes)} stock quotes")
 
