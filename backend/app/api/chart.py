@@ -62,32 +62,57 @@ async def get_index_history(
 
 @router.get("/index/intraday")
 async def get_index_intraday():
-    """Get CSI 300 index intraday minute-level data via akshare."""
-    import akshare as ak
+    """Get CSI 300 index intraday minute-level data via direct East Money API.
+
+    Uses push2his.eastmoney.com/api/qt/stock/trends2/get directly instead of
+    akshare, because akshare's index_zh_a_hist_min_em calls index_code_id_map_em()
+    first which hits a blocked East Money endpoint on this server.
+    """
+    import requests as _requests
 
     today = datetime.now(_CST)
     today_str = today.strftime("%Y-%m-%d")
-    start_dt = today_str + " 09:25:00"
-    end_dt = today.strftime("%Y-%m-%d %H:%M:%S")
+
+    _HEADERS = {
+        "User-Agent": (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) "
+            "Chrome/120.0.0.0 Safari/537.36"
+        ),
+        "Referer": "https://finance.eastmoney.com/",
+    }
 
     try:
-        df = ak.index_zh_a_hist_min_em(
-            symbol="000300",
-            period="1",
-            start_date=start_dt,
-            end_date=end_dt,
+        resp = _requests.get(
+            "https://push2his.eastmoney.com/api/qt/stock/trends2/get",
+            params={
+                "secid": "1.000300",
+                "fields1": "f1,f2,f3,f4,f5,f6,f7,f8,f9,f10,f11,f12,f13",
+                "fields2": "f51,f52,f53,f54,f55,f56,f57,f58",
+                "iscr": "0",
+                "ndays": "1",
+            },
+            headers=_HEADERS,
+            timeout=10,
         )
-        if df.empty:
+        data = resp.json()
+        raw_trends = (data.get("data") or {}).get("trends", [])
+        if not raw_trends:
             return {"times": [], "values": [], "pre_close": 0, "name": "沪深300"}
 
         times = []
         values = []
-        for _, row in df.iterrows():
-            time_raw = str(row["时间"])
-            # Format: "YYYY-MM-DD HH:MM:00" → extract "HH:MM"
-            t = time_raw.split(" ")[1][:5] if " " in time_raw else time_raw[:5]
+        for entry in raw_trends:
+            parts = entry.split(",")
+            if len(parts) < 3:
+                continue
+            # parts[0]: "YYYY-MM-DD HH:MM", parts[2]: close price
+            dt_str = parts[0]
+            if not dt_str.startswith(today_str):
+                continue  # skip data from other days
+            t = dt_str.split(" ")[1][:5]  # "HH:MM"
             try:
-                val = float(row["收盘"])
+                val = float(parts[2])
             except (ValueError, TypeError):
                 continue
             times.append(t)
