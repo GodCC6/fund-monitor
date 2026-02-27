@@ -18,6 +18,10 @@ logger = logging.getLogger(__name__)
 _nav_history_cache: dict[str, tuple[float, dict[str, float]]] = {}
 _NAV_HISTORY_CACHE_TTL = 3600  # 1 hour
 
+# Cache for is_market_trading_today(): (timestamp, result)
+_trading_today_cache: tuple[float, bool] | None = None
+_TRADING_TODAY_CACHE_TTL = 300  # 5 minutes
+
 # Browser-like headers to avoid anti-bot blocking on eastmoney APIs
 _EM_HEADERS = {
     "User-Agent": (
@@ -58,11 +62,24 @@ class MarketDataService:
         Uses the CSI 300 intraday trends endpoint as the source of truth.
         On weekends and public holidays the endpoint returns the last trading
         day's data, whose date will not match today.
+
+        Result is cached for 5 minutes to avoid a live HTTP call on every
+        /estimate request.
         """
+        global _trading_today_cache
+
         now_cst = datetime.now(_CST)
         today_str = now_cst.strftime("%Y-%m-%d")
         if now_cst.weekday() >= 5:  # Saturday or Sunday
             return False
+
+        # Return cached result if still fresh
+        now_ts = time.time()
+        if _trading_today_cache is not None:
+            cached_ts, cached_result = _trading_today_cache
+            if now_ts - cached_ts < _TRADING_TODAY_CACHE_TTL:
+                return cached_result
+
         try:
             url = (
                 "https://push2.eastmoney.com/api/qt/stock/trends2/get"
@@ -72,10 +89,13 @@ class MarketDataService:
             data = resp.json()
             trends = (data.get("data") or {}).get("trends", [])
             if not trends:
-                return False
-            # Entry format: "2026-02-13 09:30"
-            first_date = trends[0].split(",")[0].split(" ")[0]
-            return first_date == today_str
+                result = False
+            else:
+                # Entry format: "2026-02-13 09:30"
+                first_date = trends[0].split(",")[0].split(" ")[0]
+                result = first_date == today_str
+            _trading_today_cache = (now_ts, result)
+            return result
         except Exception:
             return True  # If check fails, assume market is open
 
