@@ -24,38 +24,12 @@ router = APIRouter(prefix="/api/fund", tags=["chart"])
 async def get_index_history(
     period: str = Query("30d", pattern="^(7d|30d|ytd|1y|3y)$"),
 ):
-    """Get CSI 300 index historical close prices via akshare."""
+    """Get CSI 300 index historical close prices via akshare (Sina source)."""
     import akshare as ak
 
     today = datetime.now(_CST)
-    if period == "7d":
-        cutoff = today - timedelta(days=10)
-    elif period == "30d":
-        cutoff = today - timedelta(days=45)
-    elif period == "ytd":
-        cutoff = datetime(today.year, 1, 1) - timedelta(days=5)
-    elif period == "1y":
-        cutoff = today - timedelta(days=400)
-    elif period == "3y":
-        cutoff = today - timedelta(days=365 * 3 + 30)
-    else:
-        cutoff = today - timedelta(days=45)
 
-    try:
-        df = ak.index_zh_a_hist(
-            symbol="000300",
-            period="daily",
-            start_date=cutoff.strftime("%Y%m%d"),
-            end_date=today.strftime("%Y%m%d"),
-        )
-        if df.empty:
-            return {"dates": [], "values": [], "name": "沪深300"}
-        dates = [str(d)[:10] for d in df["日期"].tolist()]
-        values = [float(v) for v in df["收盘"].tolist()]
-    except Exception:
-        return {"dates": [], "values": [], "name": "沪深300"}
-
-    # Filter to exact period cutoff
+    # Determine cutoff date for filtering
     if period == "7d":
         real_cutoff = (today - timedelta(days=7)).strftime("%Y-%m-%d")
     elif period == "30d":
@@ -68,6 +42,17 @@ async def get_index_history(
         real_cutoff = (today - timedelta(days=365 * 3)).strftime("%Y-%m-%d")
     else:
         real_cutoff = (today - timedelta(days=30)).strftime("%Y-%m-%d")
+
+    try:
+        # Use Sina-based daily data (push2his.eastmoney.com kline endpoint is blocked)
+        df = ak.stock_zh_index_daily(symbol="sh000300")
+        if df.empty:
+            return {"dates": [], "values": [], "name": "沪深300"}
+        # Columns: date, open, high, low, close, volume
+        dates = [str(d)[:10] for d in df["date"].tolist()]
+        values = [float(v) for v in df["close"].tolist()]
+    except Exception:
+        return {"dates": [], "values": [], "name": "沪深300"}
 
     filtered_dates = [d for d in dates if d >= real_cutoff]
     filtered_values = [v for d, v in zip(dates, values) if d >= real_cutoff]
@@ -176,17 +161,23 @@ async def get_intraday(
     if fund is None:
         raise HTTPException(status_code=404, detail="Fund not found")
 
-    today_str = datetime.now(_CST).strftime("%Y-%m-%d")
+    now_cst = datetime.now(_CST)
+    today_str = now_cst.strftime("%Y-%m-%d")
+    is_weekday = now_cst.weekday() < 5  # Mon-Fri
 
-    # Find the most recent snapshot date so non-trading days fall back to last
-    # trading day's data instead of returning empty.
-    date_result = await db.execute(
-        select(FundEstimateSnapshot.snapshot_date)
-        .where(FundEstimateSnapshot.fund_code == fund_code)
-        .order_by(FundEstimateSnapshot.snapshot_date.desc())
-        .limit(1)
-    )
-    query_date = date_result.scalar() or today_str
+    if is_weekday:
+        # On trading days only show today's snapshots; don't fall back to a
+        # previous day so that stale data never gets paired with today's index.
+        query_date = today_str
+    else:
+        # On weekends fall back to the most recent trading day with snapshots.
+        date_result = await db.execute(
+            select(FundEstimateSnapshot.snapshot_date)
+            .where(FundEstimateSnapshot.fund_code == fund_code)
+            .order_by(FundEstimateSnapshot.snapshot_date.desc())
+            .limit(1)
+        )
+        query_date = date_result.scalar() or today_str
 
     result = await db.execute(
         select(FundEstimateSnapshot)
@@ -194,16 +185,35 @@ async def get_intraday(
             FundEstimateSnapshot.fund_code == fund_code,
             FundEstimateSnapshot.snapshot_date == query_date,
         )
-        .order_by(FundEstimateSnapshot.snapshot_time)
+        .order_by(FundEstimateSnapshot.snapshot_time, FundEstimateSnapshot.id)
     )
     snapshots = result.scalars().all()
 
-    times = [s.snapshot_time for s in snapshots]
-    navs = [s.est_nav for s in snapshots]
+    # Deduplicate by time: keep the last snapshot per HH:MM (highest id wins
+    # since snapshots are ordered by time then id ascending).
+    seen: dict[str, tuple[str, float]] = {}
+    for s in snapshots:
+        seen[s.snapshot_time] = (s.snapshot_time, s.est_nav)
+    deduped = sorted(seen.values(), key=lambda x: x[0])
+
+    times = [t for t, _ in deduped]
+    navs = [n for _, n in deduped]
+
+    # Compute the base nav that was used when the snapshots were saved.
+    # The first snapshot's est_nav was calculated as last_nav*(1+change/100),
+    # so base_nav = est_nav / (1 + est_change_pct/100).  Using this as
+    # last_nav in the response anchors the frontend correctly and avoids a
+    # visible jump when fund.last_nav has since been refreshed.
+    base_nav = fund.last_nav
+    if snapshots:
+        first = snapshots[0]
+        denom = 1.0 + first.est_change_pct / 100.0
+        if denom != 0:
+            base_nav = round(first.est_nav / denom, 4)
 
     return {
         "date": query_date,
-        "last_nav": fund.last_nav,
+        "last_nav": base_nav,
         "times": times,
         "navs": navs,
     }
