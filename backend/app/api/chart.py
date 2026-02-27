@@ -151,7 +151,7 @@ async def get_nav_history(
     navs = [float(n) for n in df["单位净值"].tolist()]
 
     # Filter by period
-    today = datetime.now()
+    today = datetime.now(_CST)
     if period == "7d":
         cutoff = today - timedelta(days=7)
     elif period == "30d":
