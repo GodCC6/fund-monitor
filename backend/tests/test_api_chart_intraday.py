@@ -164,3 +164,152 @@ async def test_intraday_single_snapshot_no_jump(db_with_snapshots):
     assert resp.status_code == 200
     data = resp.json()
     assert len(data["navs"]) == len(data["times"])
+
+
+# ---------------------------------------------------------------------------
+# Spike suppressor tests
+# ---------------------------------------------------------------------------
+
+_DATE2 = "2026-02-25"
+
+
+@pytest_asyncio.fixture
+async def db_with_spike():
+    """DB seeded with a fund and snapshots that simulate a single-point V-spike.
+
+    Scenario (mirrors the real Feb 25 bug):
+      base_nav = 2.5376
+      09:32 → change_pct=0.0   (flat)
+      09:33 → change_pct=-0.6018  (isolated spike — scheduler run with anomalous API data)
+      09:34 → change_pct=0.0   (flat — spike immediately reverses)
+
+    Without spike suppression: navs[09:33] = 2.5223  (visible dip)
+    With    spike suppression: navs[09:33] ≈ 2.5376  (interpolated back to flat)
+    """
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+
+    async def override():
+        async with factory() as s:
+            yield s
+
+    app.dependency_overrides[get_db] = override
+    base = 2.5376
+
+    async with factory() as s:
+        s.add(Fund(
+            fund_code=_FUND_CODE,
+            fund_name="华夏成长",
+            fund_type="混合型",
+            last_nav=base,
+            nav_date=_DATE2,
+        ))
+        for time_str, change in [("09:32", 0.0), ("09:33", -0.6018), ("09:34", 0.0)]:
+            s.add(FundEstimateSnapshot(
+                fund_code=_FUND_CODE,
+                est_nav=round(base * (1 + change / 100), 4),
+                est_change_pct=change,
+                snapshot_time=time_str,
+                snapshot_date=_DATE2,
+            ))
+        await s.commit()
+
+    yield
+
+    app.dependency_overrides.clear()
+    await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_isolated_spike_is_suppressed(db_with_spike):
+    """A single-point V-spike must be smoothed to the interpolated value.
+
+    The middle point (09:33) deviates >= 0.3 % from both neighbours while those
+    neighbours are within 0.3 % of each other — the suppressor must replace it.
+    """
+    from datetime import datetime, timezone, timedelta
+    _CST = timezone(timedelta(hours=8))
+    fake_now = datetime(2026, 2, 25, 15, 0, tzinfo=_CST)
+
+    with patch("app.api.chart.datetime") as mock_dt:
+        mock_dt.now.return_value = fake_now
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+            resp = await c.get(f"/api/fund/{_FUND_CODE}/intraday")
+
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["times"] == ["09:32", "09:33", "09:34"]
+    navs = data["navs"]
+
+    base_nav = data["last_nav"]
+    # Without suppression navs[1] ≈ 2.5223; with suppression it must be
+    # close to the average of its neighbours (both ≈ base_nav).
+    assert abs(navs[1] - base_nav) < 0.001, (
+        f"Spike not suppressed: navs[1]={navs[1]}, expected ~{base_nav}"
+    )
+
+
+@pytest.mark.asyncio
+async def test_legitimate_trend_not_suppressed(db_with_spike):
+    """A genuine downtrend must NOT be flattened by the spike suppressor.
+
+    Three consecutive declining points all differ from each other, so the
+    neighbours are NOT close to each other — the suppressor must leave them alone.
+    """
+    from datetime import datetime, timezone, timedelta
+    _CST = timezone(timedelta(hours=8))
+
+    # Seed a separate DB with a genuine trend (three declining points)
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+
+    async def override():
+        async with factory() as s:
+            yield s
+
+    app.dependency_overrides[get_db] = override
+    base = 2.5376
+    trend_date = "2026-02-26"
+
+    async with factory() as s:
+        s.add(Fund(
+            fund_code=_FUND_CODE,
+            fund_name="华夏成长",
+            fund_type="混合型",
+            last_nav=base,
+            nav_date=trend_date,
+        ))
+        # Continuously declining: -0.3%, -0.6%, -0.9% — legitimate trend
+        for time_str, change in [("09:30", -0.3), ("09:31", -0.6), ("09:32", -0.9)]:
+            s.add(FundEstimateSnapshot(
+                fund_code=_FUND_CODE,
+                est_nav=round(base * (1 + change / 100), 4),
+                est_change_pct=change,
+                snapshot_time=time_str,
+                snapshot_date=trend_date,
+            ))
+        await s.commit()
+
+    fake_now = datetime(2026, 2, 26, 15, 0, tzinfo=timezone(timedelta(hours=8)))
+
+    with patch("app.api.chart.datetime") as mock_dt:
+        mock_dt.now.return_value = fake_now
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+            resp = await c.get(f"/api/fund/{_FUND_CODE}/intraday")
+
+    assert resp.status_code == 200
+    data = resp.json()
+    navs = data["navs"]
+
+    # The middle point (-0.6 %) must NOT be suppressed — it's part of a trend
+    expected_mid = round(base * (1 + (-0.6) / 100), 4)
+    assert abs(navs[1] - expected_mid) < 0.0001, (
+        f"Legitimate trend incorrectly flattened: navs[1]={navs[1]}, expected {expected_mid}"
+    )
+
+    app.dependency_overrides.clear()
+    await engine.dispose()

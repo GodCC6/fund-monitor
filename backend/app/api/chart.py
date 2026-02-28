@@ -242,6 +242,39 @@ async def get_intraday(
     # Re-anchor every nav to the same base_nav so the chart is smooth.
     navs = [round(base_nav * (1.0 + c / 100.0), 4) for c in change_pcts]
 
+    # Suppress isolated single-point spikes.  The scheduler runs every 30 s so
+    # each HH:MM slot may have two snapshots with different est_change_pct values
+    # (one captured during a momentary API reading, one captured at flat 0 %).
+    # When the non-zero reading has the higher id it "wins" deduplication and
+    # creates a V-shaped artifact: the nav drops (or spikes) for exactly one
+    # minute and immediately returns to the surrounding level.
+    #
+    # Detection rule: a point is a spike when BOTH its immediate neighbours
+    # differ from it by >= _SPIKE_THRESHOLD_PCT AND those neighbours are within
+    # _SPIKE_THRESHOLD_PCT of each other.  If so, replace it with the average
+    # of its neighbours (linear interpolation over one step).
+    #
+    # This deliberately does NOT suppress legitimate trends: a genuine move
+    # shows up in multiple consecutive minutes so the "neighbours close to each
+    # other" condition will fail.
+    _SPIKE_THRESHOLD_PCT = 0.3
+    if len(navs) >= 3:
+        smoothed = list(navs)
+        for i in range(1, len(navs) - 1):
+            base = navs[i - 1]
+            if base == 0:
+                continue
+            step_left = abs(navs[i] - base) / base * 100
+            step_right = abs(navs[i + 1] - navs[i]) / base * 100
+            neighbor_delta = abs(navs[i + 1] - base) / base * 100
+            if (
+                step_left >= _SPIKE_THRESHOLD_PCT
+                and step_right >= _SPIKE_THRESHOLD_PCT
+                and neighbor_delta < _SPIKE_THRESHOLD_PCT
+            ):
+                smoothed[i] = round((base + navs[i + 1]) / 2, 4)
+        navs = smoothed
+
     return {
         "date": query_date,
         "last_nav": base_nav,
