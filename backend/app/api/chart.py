@@ -216,25 +216,31 @@ async def get_intraday(
 
     # Deduplicate by time: keep the last snapshot per HH:MM (highest id wins
     # since snapshots are ordered by time then id ascending).
-    seen: dict[str, tuple[str, float]] = {}
+    # Track est_change_pct so we can re-anchor navs to a consistent baseline.
+    seen: dict[str, tuple[str, float, float]] = {}
     for s in snapshots:
-        seen[s.snapshot_time] = (s.snapshot_time, s.est_nav)
+        seen[s.snapshot_time] = (s.snapshot_time, s.est_nav, s.est_change_pct)
     deduped = sorted(seen.values(), key=lambda x: x[0])
 
-    times = [t for t, _ in deduped]
-    navs = [n for _, n in deduped]
+    times = [t for t, _, _ in deduped]
+    change_pcts = [c for _, _, c in deduped]
 
-    # Compute the base nav that was used when the snapshots were saved.
-    # The first snapshot's est_nav was calculated as last_nav*(1+change/100),
-    # so base_nav = est_nav / (1 + est_change_pct/100).  Using this as
-    # last_nav in the response anchors the frontend correctly and avoids a
-    # visible jump when fund.last_nav has since been refreshed.
+    # Compute the base nav that was used when the first snapshot was saved.
+    # est_nav = base_nav * (1 + est_change_pct/100), so:
+    #   base_nav = est_nav / (1 + est_change_pct/100)
+    # Using this as the single baseline for ALL navs prevents a visible jump
+    # when fund.last_nav changed mid-session (e.g. via a manual refresh-nav
+    # call).  Without re-anchoring, snapshots before/after the last_nav change
+    # would be computed against different bases and produce a level shift.
     base_nav = fund.last_nav
     if snapshots:
         first = snapshots[0]
         denom = 1.0 + first.est_change_pct / 100.0
         if denom != 0:
             base_nav = round(first.est_nav / denom, 4)
+
+    # Re-anchor every nav to the same base_nav so the chart is smooth.
+    navs = [round(base_nav * (1.0 + c / 100.0), 4) for c in change_pcts]
 
     return {
         "date": query_date,
