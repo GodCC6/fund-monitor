@@ -1,6 +1,7 @@
 """Fund API routes."""
 
 import logging
+from datetime import datetime, timezone, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -13,6 +14,21 @@ from app.services.cache import stock_cache
 from app.api.schemas import FundResponse, FundEstimateResponse, HoldingResponse
 
 logger = logging.getLogger(__name__)
+
+# China Standard Time (UTC+8)
+_CST = timezone(timedelta(hours=8))
+
+
+def _is_trading_hours() -> bool:
+    """Return True if current CST time is within A-share trading hours.
+
+    Morning session:   09:25–11:35 CST
+    Afternoon session: 12:55–15:05 CST
+    """
+    now = datetime.now(_CST)
+    t = now.hour * 60 + now.minute  # minutes since midnight CST
+    return (9 * 60 + 25 <= t <= 11 * 60 + 35) or (12 * 60 + 55 <= t <= 15 * 60 + 5)
+
 
 router = APIRouter(prefix="/api/fund", tags=["fund"])
 
@@ -47,7 +63,21 @@ async def get_holdings(fund_code: str, db: AsyncSession = Depends(get_db)):
 
 @router.post("/{fund_code}/refresh-nav")
 async def refresh_nav(fund_code: str, db: AsyncSession = Depends(get_db)):
-    """Manually trigger NAV refresh from data source."""
+    """Manually trigger NAV refresh from data source.
+
+    Blocked during trading hours to prevent mid-session last_nav changes that
+    would cause a visible jump in the intraday estimate chart.  The scheduled
+    20:30 job bypasses this endpoint and updates the DB directly.
+    """
+    if _is_trading_hours():
+        raise HTTPException(
+            status_code=423,
+            detail=(
+                "NAV refresh is blocked during trading hours (09:25–11:35, "
+                "12:55–15:05 CST). The scheduled refresh runs at 20:30."
+            ),
+        )
+
     fund = await fund_info_service.get_fund(db, fund_code)
     if fund is None:
         raise HTTPException(status_code=404, detail="Fund not found")
