@@ -10,7 +10,6 @@ _CST = timezone(timedelta(hours=8))
 
 import akshare as ak
 import requests
-import pandas as pd
 
 logger = logging.getLogger(__name__)
 
@@ -33,9 +32,18 @@ _EM_HEADERS = {
 }
 
 
+def _stock_exchange_prefix(code: str) -> str:
+    """Return 'sh' for Shanghai stocks, 'sz' for Shenzhen, 'bj' for Beijing."""
+    code = str(code).zfill(6)
+    if code.startswith("6"):
+        return "sh"
+    if code.startswith(("4", "8")):
+        return "bj"
+    return "sz"
+
 
 class MarketDataService:
-    """Fetches market data from akshare."""
+    """Fetches market data from akshare and direct finance APIs."""
 
     def get_fund_basic_info(self, fund_code: str) -> dict[str, str] | None:
         """Get fund name and type from akshare.
@@ -59,9 +67,9 @@ class MarketDataService:
     def is_market_trading_today(self) -> bool:
         """Return True if the A-share market has trading data for today.
 
-        Uses the CSI 300 intraday trends endpoint as the source of truth.
-        On weekends and public holidays the endpoint returns the last trading
-        day's data, whose date will not match today.
+        Uses the CSI 300 intraday trends endpoint (push2his.eastmoney.com) as the
+        source of truth.  On weekends and public holidays the endpoint returns the
+        last trading day's data, whose date will not match today.
 
         Result is cached for 5 minutes to avoid a live HTTP call on every
         /estimate request.
@@ -81,17 +89,26 @@ class MarketDataService:
                 return cached_result
 
         try:
-            url = (
-                "https://push2.eastmoney.com/api/qt/stock/trends2/get"
-                "?secid=1.000300&fields1=f2&fields2=f51&iscr=0&ndays=1"
+            # Use push2his.eastmoney.com — same host that serves the intraday index
+            # endpoint and is accessible from this server.
+            resp = requests.get(
+                "https://push2his.eastmoney.com/api/qt/stock/trends2/get",
+                params={
+                    "secid": "1.000300",
+                    "fields1": "f2",
+                    "fields2": "f51",
+                    "iscr": "0",
+                    "ndays": "1",
+                },
+                timeout=5,
+                headers=_EM_HEADERS,
             )
-            resp = requests.get(url, timeout=5, headers=_EM_HEADERS)
             data = resp.json()
             trends = (data.get("data") or {}).get("trends", [])
             if not trends:
                 result = False
             else:
-                # Entry format: "2026-02-13 09:30"
+                # Entry format: "2026-02-13 09:30,..."
                 first_date = trends[0].split(",")[0].split(" ")[0]
                 result = first_date == today_str
             _trading_today_cache = (now_ts, result)
@@ -99,47 +116,114 @@ class MarketDataService:
         except Exception:
             return True  # If check fails, assume market is open
 
-    def get_stock_quotes(self, stock_codes: list[str]) -> dict[str, dict[str, Any]]:
-        """Get real-time quotes for a list of stock codes via akshare.
+    def _get_stock_quotes_via_sina(
+        self, stock_codes: list[str]
+    ) -> dict[str, dict[str, Any]]:
+        """Fetch real-time quotes from Sina Finance API (hq.sinajs.cn).
 
+        Single batched request for all codes.
+        Response format per line:
+            var hq_str_sh600519="name,prev_close,open,price,high,low,...,date,time,...";
+        Relevant fields: [0]=name, [1]=prev_close, [3]=current_price
+        """
+        normalized = [str(c).zfill(6) for c in stock_codes]
+        symbols = [f"{_stock_exchange_prefix(c)}{c}" for c in normalized]
+        resp = requests.get(
+            f"https://hq.sinajs.cn/rn={int(time.time())}&list={','.join(symbols)}",
+            headers={
+                "Referer": "https://finance.sina.com.cn/",
+                "User-Agent": (
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                    "AppleWebKit/537.36 (KHTML, like Gecko) "
+                    "Chrome/120.0.0.0 Safari/537.36"
+                ),
+            },
+            timeout=10,
+        )
+        resp.raise_for_status()
+        result: dict[str, dict[str, Any]] = {}
+        for line in resp.text.strip().splitlines():
+            # Format: var hq_str_sh600519="name,prev_close,open,price,...";
+            if not line.startswith("var hq_str_"):
+                continue
+            try:
+                symbol_part = line.split("=")[0].split("hq_str_")[1]
+                code = symbol_part[2:].zfill(6)  # strip sh/sz/bj prefix
+                data_str = line.split('"')[1]
+                if not data_str:
+                    continue
+                parts = data_str.split(",")
+                if len(parts) < 4:
+                    continue
+                name = parts[0]
+                prev_close = float(parts[1])
+                price = float(parts[3])
+                if prev_close == 0 or price == 0:
+                    continue
+                change_pct = (price - prev_close) / prev_close * 100
+                result[code] = {
+                    "price": price,
+                    "change_pct": round(change_pct, 4),
+                    "name": name,
+                }
+            except (IndexError, ValueError, TypeError):
+                continue
+        return result
+
+    def _get_stock_quotes_via_tencent(
+        self, stock_codes: list[str]
+    ) -> dict[str, dict[str, Any]]:
+        """Fetch real-time quotes from Tencent Finance API (qt.gtimg.cn).
+
+        Used as fallback when Sina Finance is unavailable.
+        Response format per stock:
+            v_sh600519="1~name~code~price~prev_close~open~...~change_pct~..."
+        Relevant indices: [1]=name, [3]=price, [32]=change_pct
+        """
+        normalized = [str(c).zfill(6) for c in stock_codes]
+        query = ",".join(f"{_stock_exchange_prefix(c)}{c}" for c in normalized)
+        resp = requests.get(
+            f"https://qt.gtimg.cn/q={query}",
+            headers={"User-Agent": "Mozilla/5.0"},
+            timeout=10,
+        )
+        result: dict[str, dict[str, Any]] = {}
+        for line in resp.text.splitlines():
+            if "=" not in line:
+                continue
+            _, _, value = line.partition("=")
+            value = value.strip().strip('"').strip(";")
+            parts = value.split("~")
+            if len(parts) < 33:
+                continue
+            try:
+                code = str(parts[2]).zfill(6)
+                price = float(parts[3])
+                change_pct = float(parts[32])
+                name = parts[1]
+                result[code] = {"price": price, "change_pct": change_pct, "name": name}
+            except (ValueError, IndexError):
+                continue
+        return result
+
+    def get_stock_quotes(self, stock_codes: list[str]) -> dict[str, dict[str, Any]]:
+        """Get real-time quotes for a list of stock codes.
+
+        Tries Sina Finance first, falls back to Tencent Finance.
         Returns dict mapping stock_code -> {price, change_pct, name}.
         Keys are always 6-digit zero-padded pure numeric strings.
         """
         if not stock_codes:
             return {}
         try:
-            df = ak.stock_zh_a_spot_em()
-            if df.empty:
-                return {}
-
-            # Normalize lookup set: ensure all codes are 6-digit zero-padded
-            code_set = set(str(c).zfill(6) for c in stock_codes)
-            result = {}
-            for _, row in df.iterrows():
-                # '代码' column is the known stable column name from akshare/East Money
-                code = str(row['代码']).zfill(6)
-                if code not in code_set:
-                    continue
-                try:
-                    price_raw = row['最新价']
-                    change_raw = row['涨跌幅']
-                    # Skip rows with null/non-numeric values (e.g. suspended stocks)
-                    if pd.isna(price_raw) or pd.isna(change_raw):
-                        continue
-                    price = float(price_raw)
-                    change_pct = float(change_raw)
-                    name = str(row.get('名称', '') or '')
-                    result[code] = {
-                        "price": price,
-                        "change_pct": change_pct,
-                        "name": name,
-                    }
-                except (ValueError, TypeError, KeyError):
-                    continue
-            return result
+            return self._get_stock_quotes_via_sina(stock_codes)
         except Exception as e:
-            logger.error(f"Failed to fetch stock quotes via akshare: {e}", exc_info=True)
-            return {}
+            logger.warning(f"Sina Finance stock quotes failed ({e}), trying Tencent")
+            try:
+                return self._get_stock_quotes_via_tencent(stock_codes)
+            except Exception as e2:
+                logger.error(f"Tencent Finance fallback also failed: {e2}", exc_info=True)
+                return {}
 
     def get_fund_holdings(self, fund_code: str, year: str) -> list[dict[str, Any]]:
         """Get fund top holdings from quarterly report.
