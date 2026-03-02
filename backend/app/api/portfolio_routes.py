@@ -154,6 +154,10 @@ async def add_fund_to_portfolio(
     req: PortfolioFundAddRequest,
     db: AsyncSession = Depends(get_db),
 ):
+    if req.shares <= 0:
+        raise HTTPException(status_code=400, detail="shares must be greater than 0")
+    if req.cost_nav <= 0:
+        raise HTTPException(status_code=400, detail="cost_nav must be greater than 0")
     portfolio = await portfolio_service.get_portfolio(db, portfolio_id)
     if portfolio is None:
         raise HTTPException(status_code=404, detail="Portfolio not found")

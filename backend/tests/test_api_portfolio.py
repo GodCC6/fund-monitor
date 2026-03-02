@@ -126,3 +126,63 @@ async def test_remove_fund_from_portfolio(db_session):
 
         resp = await client.delete(f"/api/portfolio/{pid}/funds/000001")
         assert resp.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_add_fund_invalid_shares_zero(db_session):
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        create_resp = await client.post("/api/portfolio", json={"name": "组合A"})
+        pid = create_resp.json()["id"]
+
+        resp = await client.post(
+            f"/api/portfolio/{pid}/funds",
+            json={"fund_code": "000001", "shares": 0, "cost_nav": 1.45},
+        )
+        assert resp.status_code == 400
+        assert resp.json()["detail"] == "shares must be greater than 0"
+
+
+@pytest.mark.asyncio
+async def test_add_fund_invalid_shares_negative(db_session):
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        create_resp = await client.post("/api/portfolio", json={"name": "组合A"})
+        pid = create_resp.json()["id"]
+
+        resp = await client.post(
+            f"/api/portfolio/{pid}/funds",
+            json={"fund_code": "000001", "shares": -100, "cost_nav": 1.45},
+        )
+        assert resp.status_code == 400
+        assert resp.json()["detail"] == "shares must be greater than 0"
+
+
+@pytest.mark.asyncio
+async def test_add_fund_invalid_cost_nav_zero(db_session):
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        create_resp = await client.post("/api/portfolio", json={"name": "组合A"})
+        pid = create_resp.json()["id"]
+
+        resp = await client.post(
+            f"/api/portfolio/{pid}/funds",
+            json={"fund_code": "000001", "shares": 1000.0, "cost_nav": 0},
+        )
+        assert resp.status_code == 400
+        assert resp.json()["detail"] == "cost_nav must be greater than 0"
+
+
+@pytest.mark.asyncio
+async def test_add_fund_invalid_cost_nav_negative(db_session):
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        create_resp = await client.post("/api/portfolio", json={"name": "组合A"})
+        pid = create_resp.json()["id"]
+
+        resp = await client.post(
+            f"/api/portfolio/{pid}/funds",
+            json={"fund_code": "000001", "shares": 1000.0, "cost_nav": -1.5},
+        )
+        assert resp.status_code == 400
+        assert resp.json()["detail"] == "cost_nav must be greater than 0"
