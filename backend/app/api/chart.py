@@ -24,7 +24,7 @@ router = APIRouter(prefix="/api/fund", tags=["chart"])
 async def get_index_history(
     period: str = Query("30d", pattern="^(7d|30d|ytd|1y|3y)$"),
 ):
-    """Get CSI 300 index historical close prices via akshare (Sina source)."""
+    """Get 上海指数 (上证指数) historical close prices via akshare (Sina source)."""
     import akshare as ak
 
     today = datetime.now(_CST)
@@ -45,24 +45,24 @@ async def get_index_history(
 
     try:
         # Use Sina-based daily data (push2his.eastmoney.com kline endpoint is blocked)
-        df = ak.stock_zh_index_daily(symbol="sh000300")
+        df = ak.stock_zh_index_daily(symbol="sh000001")
         if df.empty:
-            return {"dates": [], "values": [], "name": "沪深300"}
+            return {"dates": [], "values": [], "name": "上证指数"}
         # Columns: date, open, high, low, close, volume
         dates = [str(d)[:10] for d in df["date"].tolist()]
         values = [float(v) for v in df["close"].tolist()]
     except Exception:
-        return {"dates": [], "values": [], "name": "沪深300"}
+        return {"dates": [], "values": [], "name": "上证指数"}
 
     filtered_dates = [d for d in dates if d >= real_cutoff]
     filtered_values = [v for d, v in zip(dates, values) if d >= real_cutoff]
 
-    return {"dates": filtered_dates, "values": filtered_values, "name": "沪深300"}
+    return {"dates": filtered_dates, "values": filtered_values, "name": "上证指数"}
 
 
 @router.get("/index/intraday")
 async def get_index_intraday():
-    """Get CSI 300 index intraday minute-level data via direct East Money API.
+    """Get 上海指数 (上证指数) intraday minute-level data via direct East Money API.
 
     Uses push2his.eastmoney.com/api/qt/stock/trends2/get directly instead of
     akshare, because akshare's index_zh_a_hist_min_em calls index_code_id_map_em()
@@ -86,7 +86,7 @@ async def get_index_intraday():
         resp = _requests.get(
             "https://push2his.eastmoney.com/api/qt/stock/trends2/get",
             params={
-                "secid": "1.000300",
+                "secid": "1.000001",
                 "fields1": "f1,f2,f3,f4,f5,f6,f7,f8,f9,f10,f11,f12,f13",
                 "fields2": "f51,f52,f53,f54,f55,f56,f57,f58",
                 "iscr": "0",
@@ -98,7 +98,7 @@ async def get_index_intraday():
         data = resp.json()
         raw_trends = (data.get("data") or {}).get("trends", [])
         if not raw_trends:
-            return {"times": [], "values": [], "pre_close": 0, "name": "沪深300"}
+            return {"times": [], "values": [], "pre_close": 0, "name": "上证指数"}
 
         times = []
         values = []
@@ -120,9 +120,9 @@ async def get_index_intraday():
 
         pre_close = values[0] if values else 0
     except Exception:
-        return {"times": [], "values": [], "pre_close": 0, "name": "沪深300"}
+        return {"times": [], "values": [], "pre_close": 0, "name": "上证指数"}
 
-    return {"times": times, "values": values, "pre_close": pre_close, "name": "沪深300"}
+    return {"times": times, "values": values, "pre_close": pre_close, "name": "上证指数"}
 
 
 @router.get("/{fund_code}/nav-history")
