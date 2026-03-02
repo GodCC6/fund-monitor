@@ -102,11 +102,12 @@ async def test_get_estimate(db_session):
             assert data["fund_code"] == "000001"
             assert data["est_change_pct"] > 0
             assert "details" in data
+            assert data["degraded"] == False
 
 
 @pytest.mark.asyncio
 async def test_get_estimate_non_trading_day(db_session):
-    """On non-trading days estimate returns last_nav with zero change."""
+    """On non-trading days estimate returns last_nav with zero change and degraded=True."""
     with patch(
         "app.api.fund.market_data_service.is_market_trading_today",
         return_value=False,
@@ -120,3 +121,25 @@ async def test_get_estimate_non_trading_day(db_session):
             assert data["est_change_pct"] == 0.0
             assert data["est_nav"] == 1.5  # equals last_nav seeded in fixture
             assert data["details"] == []
+            assert data["degraded"] == True
+
+
+@pytest.mark.asyncio
+async def test_get_estimate_degraded_quotes_unavailable(db_session):
+    """On a trading day when quotes fetch returns empty dict, return 200 with degraded=True."""
+    with patch(
+        "app.api.fund.market_data_service.get_stock_quotes",
+        return_value={},
+    ), patch(
+        "app.api.fund.market_data_service.is_market_trading_today",
+        return_value=True,
+    ):
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resp = await client.get("/api/fund/000001/estimate")
+            assert resp.status_code == 200
+            data = resp.json()
+            assert data["fund_code"] == "000001"
+            assert data["degraded"] == True
+            assert data["est_change_pct"] == 0.0
+            assert data["est_nav"] == 1.5  # equals last_nav seeded in fixture

@@ -137,7 +137,7 @@ onMounted(load)
     <!-- Estimate -->
     <div v-if="estimate" class="estimate-card">
       <div class="estimate-header">
-        <h3>实时估值 <span v-if="estimate.coverage > 0" class="badge">估</span></h3>
+        <h3>实时估值 <span v-if="estimate.coverage > 0" class="badge">估</span><span v-if="estimate.degraded" class="badge-degraded">非交易时段</span></h3>
       </div>
       <div class="estimate-summary">
         <div class="est-item">
@@ -257,6 +257,17 @@ onMounted(load)
   padding: 1px 4px;
   border-radius: 3px;
   vertical-align: middle;
+}
+
+.badge-degraded {
+  display: inline-block;
+  background: #f0f0f0;
+  color: #999;
+  font-size: 10px;
+  padding: 1px 5px;
+  border-radius: 3px;
+  vertical-align: middle;
+  margin-left: 4px;
 }
 
 .estimate-summary {

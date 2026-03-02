@@ -19,6 +19,7 @@ class FundEstimateResponse(BaseModel):
     last_nav: float
     coverage: float
     details: list[dict]
+    degraded: bool = False
 
 
 class HoldingResponse(BaseModel):

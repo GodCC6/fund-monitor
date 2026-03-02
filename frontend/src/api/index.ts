@@ -32,6 +32,7 @@ export interface FundEstimate {
     change_pct: number
     contribution: number
   }>
+  degraded: boolean
 }
 
 export interface PortfolioSummary {

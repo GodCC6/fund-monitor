@@ -157,8 +157,10 @@ async def get_estimate(fund_code: str, db: AsyncSession = Depends(get_db)):
         holdings_data, stock_quotes, fund.last_nav
     )
 
+    degraded = len(stock_quotes) == 0
     return FundEstimateResponse(
         fund_code=fund.fund_code,
         fund_name=fund.fund_name,
+        degraded=degraded,
         **estimate,
     )
