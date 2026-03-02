@@ -225,15 +225,51 @@ class MarketDataService:
                 logger.error(f"Tencent Finance fallback also failed: {e2}", exc_info=True)
                 return {}
 
-    def get_fund_holdings(self, fund_code: str, year: str) -> list[dict[str, Any]]:
-        """Get fund top holdings from quarterly report.
+    @staticmethod
+    def _quarter_label_to_date(label: str) -> str | None:
+        """Convert a 季度 label like '2025年4季度股票投资明细' to 'YYYY-MM-DD'.
 
-        Returns list of {stock_code, stock_name, holding_ratio}.
+        Quarter-end dates:
+          1季度 → MM-DD = 03-31
+          2季度 / 中报 → 06-30
+          3季度 → 09-30
+          4季度 / 年报 → 12-31
+        Returns None if the label cannot be parsed.
+        """
+        import re
+        m = re.search(r"(\d{4})年(\d)季度", label)
+        if m:
+            year, q = m.group(1), int(m.group(2))
+            quarter_ends = {1: "03-31", 2: "06-30", 3: "09-30", 4: "12-31"}
+            return f"{year}-{quarter_ends.get(q, '12-31')}"
+        m = re.search(r"(\d{4})年中报", label)
+        if m:
+            return f"{m.group(1)}-06-30"
+        m = re.search(r"(\d{4})年年报", label)
+        if m:
+            return f"{m.group(1)}-12-31"
+        return None
+
+    def get_fund_holdings(
+        self, fund_code: str, year: str
+    ) -> tuple[list[dict[str, Any]], str | None]:
+        """Get fund top holdings from the most recent quarterly report.
+
+        Returns (holdings, report_date) where holdings is a list of
+        {stock_code, stock_name, holding_ratio} dicts and report_date is
+        the quarter-end date string (e.g. '2025-12-31'), or None on failure.
         """
         try:
             df = ak.fund_portfolio_hold_em(symbol=fund_code, date=year)
             if df.empty:
-                return []
+                return [], None
+
+            # Filter to the most recent quarter only (last unique value in 季度 column)
+            quarters = df["季度"].unique().tolist()
+            latest_quarter = quarters[-1]
+            df = df[df["季度"] == latest_quarter]
+
+            report_date = self._quarter_label_to_date(latest_quarter)
 
             holdings = []
             for _, row in df.iterrows():
@@ -244,10 +280,10 @@ class MarketDataService:
                         "holding_ratio": float(row["占净值比例"]) / 100.0,
                     }
                 )
-            return holdings
+            return holdings, report_date
         except Exception as e:
             logger.error(f"Failed to fetch fund holdings for {fund_code}: {e}")
-            return []
+            return [], None
 
     def get_fund_nav(self, fund_code: str) -> dict[str, Any] | None:
         """Get the latest NAV for a fund.

@@ -180,6 +180,48 @@ async def save_portfolio_snapshots():
         logger.error(f"Failed to save portfolio snapshots: {e}")
 
 
+async def refresh_all_fund_holdings():
+    """Daily: fetch latest quarterly holdings for all tracked funds.
+
+    Only updates a fund's holdings when a newer report_date is found,
+    so this is safe to run frequently without unnecessary DB writes.
+    """
+    try:
+        async with async_session_factory() as session:
+            funds = await fund_info_service.get_all_funds(session)
+            updated = 0
+            year = datetime.now(_CST).strftime("%Y")
+
+            for fund in funds:
+                # Check what report_date we currently have stored
+                current_holdings = await fund_info_service.get_holdings(session, fund.fund_code)
+                current_report_date = current_holdings[0].report_date if current_holdings else None
+
+                # Fetch latest holdings from akshare
+                new_holdings, new_report_date = market_data_service.get_fund_holdings(
+                    fund.fund_code, year
+                )
+                if not new_holdings:
+                    new_holdings, new_report_date = market_data_service.get_fund_holdings(
+                        fund.fund_code, str(int(year) - 1)
+                    )
+
+                # Only write if we got a newer (or first-time) report
+                if new_holdings and new_report_date and new_report_date != current_report_date:
+                    await fund_info_service.update_holdings(
+                        session, fund.fund_code, new_holdings[:10], new_report_date
+                    )
+                    updated += 1
+                    logger.info(
+                        f"Updated holdings for {fund.fund_code}: "
+                        f"{current_report_date} → {new_report_date}"
+                    )
+
+            logger.info(f"Holdings refresh: updated {updated}/{len(funds)} funds")
+    except Exception as e:
+        logger.error(f"Failed to refresh fund holdings: {e}")
+
+
 async def refresh_all_fund_navs():
     """After market close (20:30 weekdays), fetch official NAV for all tracked funds."""
     try:
@@ -217,6 +259,12 @@ def start_scheduler():
         refresh_all_fund_navs,
         trigger=CronTrigger(hour=20, minute=30, day_of_week="mon-fri", timezone=_CST),
         id="refresh_all_fund_navs",
+        replace_existing=True,
+    )
+    scheduler.add_job(
+        refresh_all_fund_holdings,
+        trigger=CronTrigger(hour=21, minute=0, day_of_week="mon-fri", timezone=_CST),
+        id="refresh_all_fund_holdings",
         replace_existing=True,
     )
     scheduler.start()

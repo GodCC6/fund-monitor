@@ -52,15 +52,15 @@ async def setup_fund(fund_code: str, db: AsyncSession = Depends(get_db)):
             status_code=404, detail=f"Fund {fund_code} not found in akshare"
         )
 
-    # Fetch holdings (current year)
+    # Fetch holdings (current year, falling back to last year)
     from datetime import datetime
 
     year = str(datetime.now().year)
-    holdings = market_data_service.get_fund_holdings(fund_code, year)
+    holdings, report_date = market_data_service.get_fund_holdings(fund_code, year)
 
     # If no holdings for current year, try last year
     if not holdings:
-        holdings = market_data_service.get_fund_holdings(fund_code, str(int(year) - 1))
+        holdings, report_date = market_data_service.get_fund_holdings(fund_code, str(int(year) - 1))
 
     # Get fund name and type
     basic_info = market_data_service.get_fund_basic_info(fund_code)
@@ -78,10 +78,9 @@ async def setup_fund(fund_code: str, db: AsyncSession = Depends(get_db)):
     )
 
     # Save holdings
-    if holdings:
+    if holdings and report_date:
         # Only take top 10
         top_holdings = holdings[:10]
-        report_date = year + "-12-31"
         await fund_info_service.update_holdings(
             db, fund_code, top_holdings, report_date
         )

@@ -129,15 +129,65 @@ class TestGetFundHoldings:
                 "股票代码": ["600519", "000858"],
                 "股票名称": ["贵州茅台", "五粮液"],
                 "占净值比例": [8.9, 6.5],
+                "季度": ["2025年4季度股票投资明细", "2025年4季度股票投资明细"],
             }
         )
         with patch(
             "app.services.market_data.ak.fund_portfolio_hold_em", return_value=mock_df
         ):
-            result = market_service.get_fund_holdings("000001", "2025")
-            assert len(result) == 2
-            assert result[0]["stock_code"] == "600519"
-            assert result[0]["holding_ratio"] == pytest.approx(0.089)
+            holdings, report_date = market_service.get_fund_holdings("000001", "2025")
+            assert len(holdings) == 2
+            assert holdings[0]["stock_code"] == "600519"
+            assert holdings[0]["holding_ratio"] == pytest.approx(0.089)
+            assert report_date == "2025-12-31"
+
+    def test_get_fund_holdings_filters_to_latest_quarter(self, market_service):
+        """Holdings from older quarters are excluded; only the latest quarter is returned."""
+        mock_df = pd.DataFrame(
+            {
+                "股票代码": ["600519", "000858", "601318"],
+                "股票名称": ["贵州茅台", "五粮液", "中国平安"],
+                "占净值比例": [8.9, 6.5, 5.0],
+                "季度": [
+                    "2025年3季度股票投资明细",  # older
+                    "2025年4季度股票投资明细",  # latest
+                    "2025年4季度股票投资明细",  # latest
+                ],
+            }
+        )
+        with patch(
+            "app.services.market_data.ak.fund_portfolio_hold_em", return_value=mock_df
+        ):
+            holdings, report_date = market_service.get_fund_holdings("000001", "2025")
+            assert len(holdings) == 2
+            assert holdings[0]["stock_code"] == "000858"
+            assert report_date == "2025-12-31"
+
+    def test_get_fund_holdings_report_date_q1(self, market_service):
+        mock_df = pd.DataFrame(
+            {
+                "股票代码": ["600519"],
+                "股票名称": ["贵州茅台"],
+                "占净值比例": [8.9],
+                "季度": ["2025年1季度股票投资明细"],
+            }
+        )
+        with patch(
+            "app.services.market_data.ak.fund_portfolio_hold_em", return_value=mock_df
+        ):
+            _, report_date = market_service.get_fund_holdings("000001", "2025")
+            assert report_date == "2025-03-31"
+
+    def test_get_fund_holdings_empty(self, market_service):
+        mock_df = pd.DataFrame(
+            columns=["股票代码", "股票名称", "占净值比例", "季度"]
+        )
+        with patch(
+            "app.services.market_data.ak.fund_portfolio_hold_em", return_value=mock_df
+        ):
+            holdings, report_date = market_service.get_fund_holdings("000001", "2025")
+            assert holdings == []
+            assert report_date is None
 
 
 class TestGetFundNav:
