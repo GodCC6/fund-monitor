@@ -104,6 +104,15 @@ async function load() {
   }
 }
 
+// Sort
+const sortKey = ref<'default' | 'est_change_pct' | 'profit_pct'>('default')
+
+const sortedFunds = computed(() => {
+  const funds = portfolio.value?.funds ?? []
+  if (sortKey.value === 'default') return funds
+  return [...funds].sort((a, b) => b[sortKey.value as 'est_change_pct' | 'profit_pct'] - a[sortKey.value as 'est_change_pct' | 'profit_pct'])
+})
+
 // True when at least one fund has live coverage (real-time estimate active)
 const isEstimating = computed(() => portfolio.value?.funds.some(f => f.coverage > 0) ?? false)
 
@@ -249,7 +258,25 @@ onUnmounted(() => {
 
     <!-- Fund list -->
     <div v-if="portfolio && portfolio.funds.length > 0" class="fund-list">
-      <div v-for="f in portfolio.funds" :key="f.fund_code" class="fund-row">
+      <div class="sort-bar">
+        <span class="sort-label">排序：</span>
+        <button
+          class="sort-btn"
+          :class="{ active: sortKey === 'default' }"
+          @click="sortKey = 'default'"
+        >默认</button>
+        <button
+          class="sort-btn"
+          :class="{ active: sortKey === 'est_change_pct' }"
+          @click="sortKey = 'est_change_pct'"
+        >今日涨跌</button>
+        <button
+          class="sort-btn"
+          :class="{ active: sortKey === 'profit_pct' }"
+          @click="sortKey = 'profit_pct'"
+        >持仓收益率</button>
+      </div>
+      <div v-for="f in sortedFunds" :key="f.fund_code" class="fund-row">
         <div class="fund-main" @click="router.push(`/fund/${f.fund_code}`)">
           <div class="fund-header">
             <span class="fund-name">{{ f.fund_name }}</span>
@@ -698,5 +725,42 @@ onUnmounted(() => {
 .add-form-actions button:disabled {
   opacity: 0.6;
   cursor: not-allowed;
+}
+
+.sort-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: #fff;
+  border: 1px solid #e8e8e8;
+  border-radius: 8px;
+  padding: 8px 12px;
+  margin-bottom: 10px;
+}
+
+.sort-label {
+  font-size: 13px;
+  color: #999;
+  margin-right: 2px;
+}
+
+.sort-btn {
+  font-size: 13px;
+  padding: 4px 12px;
+  border-radius: 5px;
+  border: none;
+  cursor: pointer;
+  background: #f5f5f5;
+  color: #666;
+  transition: background 0.15s, color 0.15s;
+}
+
+.sort-btn:hover {
+  background: #e8e8e8;
+}
+
+.sort-btn.active {
+  background: #1a1a2e;
+  color: #fff;
 }
 </style>
