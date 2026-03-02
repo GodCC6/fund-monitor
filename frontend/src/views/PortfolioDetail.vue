@@ -212,6 +212,7 @@ onUnmounted(() => {
       <template v-if="!isEditingName">
         <h2 class="portfolio-name">{{ portfolio.name }}</h2>
         <button class="edit-name-btn" @click="startEditName" title="修改名称">✏️</button>
+        <button class="refresh-btn" @click="load" :disabled="loading" title="刷新">↻</button>
       </template>
       <template v-else>
         <input
@@ -691,6 +692,25 @@ onUnmounted(() => {
 
 .edit-name-btn:hover {
   color: #666;
+}
+
+.refresh-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 16px;
+  color: #aaa;
+  padding: 2px 4px;
+  line-height: 1;
+}
+
+.refresh-btn:hover {
+  color: #666;
+}
+
+.refresh-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
 }
 
 .name-input {
