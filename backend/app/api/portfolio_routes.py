@@ -167,6 +167,69 @@ async def add_fund_to_portfolio(
     return {"status": "ok", "fund_code": pf.fund_code}
 
 
+@router.get("/{portfolio_id}/combined-holdings")
+async def get_combined_holdings(portfolio_id: int, db: AsyncSession = Depends(get_db)):
+    """Aggregate holdings across all funds weighted by portfolio allocation.
+
+    Returns stocks sorted by combined_weight descending, with per-fund
+    contributions for each stock.
+    """
+    portfolio = await portfolio_service.get_portfolio(db, portfolio_id)
+    if portfolio is None:
+        raise HTTPException(status_code=404, detail="Portfolio not found")
+
+    pf_list = await portfolio_service.get_portfolio_funds(db, portfolio_id)
+
+    # Step 1: Compute fund market values using last_nav as conservative estimate
+    fund_values: dict[str, float] = {}
+    for pf in pf_list:
+        fund = await fund_info_service.get_fund(db, pf.fund_code)
+        nav = fund.last_nav if fund and fund.last_nav else 0.0
+        fund_values[pf.fund_code] = pf.shares * nav
+
+    total_value = sum(fund_values.values())
+    if total_value <= 0:
+        return {"holdings": [], "total_value": 0, "coverage": 0}
+
+    # Step 2: Weight each fund's holdings by its share of the portfolio
+    combined: dict[str, dict] = {}
+    for pf in pf_list:
+        fund = await fund_info_service.get_fund(db, pf.fund_code)
+        fund_weight = fund_values[pf.fund_code] / total_value
+        holdings = await fund_info_service.get_holdings(db, pf.fund_code)
+
+        for h in holdings:
+            contribution = h.holding_ratio * fund_weight
+            if h.stock_code not in combined:
+                combined[h.stock_code] = {
+                    "stock_code": h.stock_code,
+                    "stock_name": h.stock_name,
+                    "combined_weight": 0.0,
+                    "by_fund": [],
+                }
+            combined[h.stock_code]["combined_weight"] += contribution
+            combined[h.stock_code]["by_fund"].append({
+                "fund_code": pf.fund_code,
+                "fund_name": fund.fund_name if fund else pf.fund_code,
+                "fund_weight": round(fund_weight, 4),
+                "holding_ratio": h.holding_ratio,
+                "contribution": round(contribution, 4),
+            })
+
+    # Step 3: Sort by combined_weight descending and round
+    result = sorted(combined.values(), key=lambda x: x["combined_weight"], reverse=True)
+    for item in result:
+        item["combined_weight"] = round(item["combined_weight"], 4)
+
+    total_coverage = sum(h["combined_weight"] for h in result)
+
+    return {
+        "holdings": result,
+        "total_value": round(total_value, 2),
+        "coverage": round(total_coverage, 4),
+    }
+
+
 @router.delete("/{portfolio_id}/funds/{fund_code}")
 async def remove_fund_from_portfolio(
     portfolio_id: int,

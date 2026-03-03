@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted, computed, watch, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { api, type PortfolioDetail, type FundSearchResult } from '../api'
+import { api, type PortfolioDetail, type FundSearchResult, type CombinedHoldingsData } from '../api'
 import PortfolioChart from '../components/PortfolioChart.vue'
 
 const route = useRoute()
@@ -194,6 +194,27 @@ function formatMoney(val: number): string {
   return val.toFixed(2)
 }
 
+// Combined holdings
+const combinedHoldings = ref<CombinedHoldingsData | null>(null)
+const showCombined = ref(false)
+const combinedLoading = ref(false)
+
+async function loadCombinedHoldings() {
+  if (combinedHoldings.value) {
+    showCombined.value = !showCombined.value
+    return
+  }
+  combinedLoading.value = true
+  try {
+    combinedHoldings.value = await api.getCombinedHoldings(portfolioId.value)
+    showCombined.value = true
+  } catch {
+    // silently fail
+  } finally {
+    combinedLoading.value = false
+  }
+}
+
 onMounted(() => {
   load()
   startAutoRefresh()
@@ -318,6 +339,42 @@ onUnmounted(() => {
 
     <div v-if="portfolio && portfolio.funds.length === 0" class="empty">
       暂无基金，请添加
+    </div>
+
+    <!-- Combined Holdings Analysis -->
+    <div v-if="portfolio && portfolio.funds.length > 0" class="combined-section">
+      <button class="combined-toggle" @click="loadCombinedHoldings">
+        <span>合并持仓分析</span>
+        <span v-if="combinedLoading">加载中...</span>
+        <span v-else>{{ showCombined ? '▲' : '▼' }}</span>
+      </button>
+
+      <div v-if="showCombined && combinedHoldings" class="combined-body">
+        <div class="combined-meta">
+          覆盖率 {{ (combinedHoldings.coverage * 100).toFixed(1) }}%
+          · 组合总市值 {{ combinedHoldings.total_value.toFixed(2) }}
+        </div>
+        <div class="combined-header">
+          <span>股票</span>
+          <span>合并权重</span>
+          <span>风险提示</span>
+        </div>
+        <div
+          v-for="h in combinedHoldings.holdings"
+          :key="h.stock_code"
+          class="combined-row"
+        >
+          <span class="c-name">{{ h.stock_name }}<small>{{ h.stock_code }}</small></span>
+          <span class="c-weight">{{ (h.combined_weight * 100).toFixed(2) }}%</span>
+          <span class="c-risk">
+            <span v-if="h.combined_weight > 0.05" class="risk-high">集中</span>
+            <span v-else-if="h.combined_weight > 0.03" class="risk-mid">偏重</span>
+          </span>
+        </div>
+        <div class="combined-hint">
+          权重 &gt; 5% 标记为「集中」，可能带来集中风险
+        </div>
+      </div>
     </div>
 
     <!-- Add fund -->
@@ -782,5 +839,92 @@ onUnmounted(() => {
 .sort-btn.active {
   background: #1a1a2e;
   color: #fff;
+}
+
+.combined-section {
+  margin-bottom: 16px;
+}
+
+.combined-toggle {
+  width: 100%;
+  padding: 12px 16px;
+  background: #f8f8f8;
+  border: 1px solid #e8e8e8;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 14px;
+  color: #333;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.combined-body {
+  background: #fff;
+  border: 1px solid #e8e8e8;
+  border-top: none;
+  border-radius: 0 0 8px 8px;
+  padding: 12px 16px;
+}
+
+.combined-meta {
+  font-size: 12px;
+  color: #999;
+  margin-bottom: 10px;
+}
+
+.combined-header {
+  display: grid;
+  grid-template-columns: 2fr 1fr 1fr;
+  font-size: 11px;
+  color: #999;
+  padding: 4px 0;
+  border-bottom: 1px solid #f0f0f0;
+}
+
+.combined-row {
+  display: grid;
+  grid-template-columns: 2fr 1fr 1fr;
+  padding: 8px 0;
+  font-size: 13px;
+  border-bottom: 1px solid #f8f8f8;
+  align-items: center;
+}
+
+.c-name {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.c-name small {
+  font-size: 11px;
+  color: #bbb;
+}
+
+.c-weight {
+  font-weight: 500;
+}
+
+.risk-high {
+  font-size: 11px;
+  background: #fff3e0;
+  color: #e65100;
+  padding: 2px 6px;
+  border-radius: 3px;
+}
+
+.risk-mid {
+  font-size: 11px;
+  background: #fff8e1;
+  color: #f57f17;
+  padding: 2px 6px;
+  border-radius: 3px;
+}
+
+.combined-hint {
+  font-size: 11px;
+  color: #bbb;
+  margin-top: 8px;
 }
 </style>

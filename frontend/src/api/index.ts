@@ -112,6 +112,25 @@ export interface PortfolioHistoryData {
   profit_pcts: number[]
 }
 
+export interface CombinedHolding {
+  stock_code: string
+  stock_name: string
+  combined_weight: number
+  by_fund: Array<{
+    fund_code: string
+    fund_name: string
+    fund_weight: number
+    holding_ratio: number
+    contribution: number
+  }>
+}
+
+export interface CombinedHoldingsData {
+  holdings: CombinedHolding[]
+  total_value: number
+  coverage: number
+}
+
 export const api = {
   getFund: (code: string) => request<FundInfo>(`/api/fund/${code}`),
 
@@ -165,4 +184,7 @@ export const api = {
 
   refreshFundNav: (code: string) =>
     request<{ fund_code: string; nav: number; nav_date: string }>(`/api/fund/${code}/refresh-nav`, { method: 'POST' }),
+
+  getCombinedHoldings: (id: number) =>
+    request<CombinedHoldingsData>(`/api/portfolio/${id}/combined-holdings`),
 }
