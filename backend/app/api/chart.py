@@ -1,5 +1,7 @@
 """Chart data API routes."""
 
+import akshare as ak
+import requests as _requests
 from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select
@@ -25,8 +27,6 @@ async def get_index_history(
     period: str = Query("30d", pattern="^(7d|30d|ytd|1y|3y)$"),
 ):
     """Get 上海指数 (上证指数) historical close prices via akshare (Sina source)."""
-    import akshare as ak
-
     today = datetime.now(_CST)
 
     # Determine cutoff date for filtering
@@ -68,8 +68,6 @@ async def get_index_intraday():
     akshare, because akshare's index_zh_a_hist_min_em calls index_code_id_map_em()
     first which hits a blocked East Money endpoint on this server.
     """
-    import requests as _requests
-
     today = datetime.now(_CST)
     today_str = today.strftime("%Y-%m-%d")
 
@@ -138,8 +136,6 @@ async def get_nav_history(
 
     # Use akshare to get historical NAV
     try:
-        import akshare as ak
-
         df = ak.fund_open_fund_info_em(symbol=fund_code, indicator="单位净值走势")
         if df.empty:
             return {"dates": [], "navs": []}
