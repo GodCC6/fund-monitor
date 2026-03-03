@@ -4,7 +4,7 @@ import time
 import threading
 from typing import Any
 
-from app.config import STOCK_CACHE_TTL, ESTIMATE_CACHE_TTL
+from app.config import STOCK_CACHE_TTL, ESTIMATE_CACHE_TTL, NAV_HISTORY_CACHE_TTL
 
 
 class CacheService:
@@ -44,3 +44,4 @@ class CacheService:
 # Global cache instances — TTLs from config
 stock_cache = CacheService(default_ttl=STOCK_CACHE_TTL)
 estimate_cache = CacheService(default_ttl=ESTIMATE_CACHE_TTL)
+nav_history_cache = CacheService(default_ttl=NAV_HISTORY_CACHE_TTL)

@@ -4,6 +4,7 @@ import pytest
 import pandas as pd
 from unittest.mock import patch, MagicMock
 from app.services.market_data import MarketDataService
+from app.services.cache import nav_history_cache
 
 
 @pytest.fixture
@@ -205,3 +206,48 @@ class TestGetFundNav:
             result = market_service.get_fund_nav("000001")
             assert result["nav"] == 1.234
             assert result["nav_date"] == "2026-02-14"
+
+
+class TestGetFundNavHistoryCache:
+    """Verify that get_fund_nav_history uses CacheService (B9)."""
+
+    def setup_method(self):
+        """Clear the shared nav_history_cache before each test."""
+        nav_history_cache.clear()
+
+    def test_result_stored_in_cache(self, market_service):
+        """Fetched NAV history is persisted in nav_history_cache."""
+        mock_df = pd.DataFrame(
+            {
+                "净值日期": ["2026-01-01", "2026-01-02"],
+                "单位净值": [1.1, 1.2],
+            }
+        )
+        with patch(
+            "app.services.market_data.ak.fund_open_fund_info_em", return_value=mock_df
+        ):
+            result = market_service.get_fund_nav_history("000001")
+
+        assert result == {"2026-01-01": 1.1, "2026-01-02": 1.2}
+        cached = nav_history_cache.get("nav_history:000001")
+        assert cached == result
+
+    def test_cache_hit_skips_akshare_call(self, market_service):
+        """A warm cache entry is returned without calling akshare."""
+        nav_history_cache.set("nav_history:000001", {"2026-01-01": 1.5})
+        with patch(
+            "app.services.market_data.ak.fund_open_fund_info_em"
+        ) as mock_ak:
+            result = market_service.get_fund_nav_history("000001")
+        mock_ak.assert_not_called()
+        assert result == {"2026-01-01": 1.5}
+
+    def test_failed_fetch_returns_empty_without_caching(self, market_service):
+        """On akshare failure, returns {} and does not populate the cache."""
+        with patch(
+            "app.services.market_data.ak.fund_open_fund_info_em",
+            side_effect=Exception("network error"),
+        ):
+            result = market_service.get_fund_nav_history("000001")
+        assert result == {}
+        assert nav_history_cache.get("nav_history:000001") is None

@@ -11,11 +11,9 @@ _CST = timezone(timedelta(hours=8))
 import akshare as ak
 import requests
 
-logger = logging.getLogger(__name__)
+from app.services.cache import nav_history_cache
 
-# Module-level cache: fund_code -> (timestamp, {date_str: nav})
-_nav_history_cache: dict[str, tuple[float, dict[str, float]]] = {}
-_NAV_HISTORY_CACHE_TTL = 3600  # 1 hour
+logger = logging.getLogger(__name__)
 
 # Cache for is_market_trading_today(): (timestamp, result)
 _trading_today_cache: tuple[float, bool] | None = None
@@ -307,18 +305,16 @@ class MarketDataService:
 
     def get_fund_nav_history(self, fund_code: str) -> dict[str, float]:
         """Get full NAV history for a fund. Returns {date_str: nav}. Cached 1 hour."""
-        now = time.time()
-        if fund_code in _nav_history_cache:
-            ts, data = _nav_history_cache[fund_code]
-            if now - ts < _NAV_HISTORY_CACHE_TTL:
-                return data
+        cached = nav_history_cache.get(f"nav_history:{fund_code}")
+        if cached is not None:
+            return cached
         try:
             df = ak.fund_open_fund_info_em(symbol=fund_code, indicator="单位净值走势")
             nav_dict: dict[str, float] = {}
             for _, row in df.iterrows():
                 date_str = str(row["净值日期"])[:10]  # "YYYY-MM-DD"
                 nav_dict[date_str] = float(row["单位净值"])
-            _nav_history_cache[fund_code] = (now, nav_dict)
+            nav_history_cache.set(f"nav_history:{fund_code}", nav_dict)
             return nav_dict
         except Exception as e:
             logger.error(f"Failed to fetch NAV history for {fund_code}: {e}")

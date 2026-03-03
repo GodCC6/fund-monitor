@@ -10,6 +10,7 @@ DATABASE_URL = os.getenv("DATABASE_URL") or f"sqlite+aiosqlite:///{DB_PATH}"
 # Cache settings (in-memory, replaces Redis for MVP)
 STOCK_CACHE_TTL = 604800  # 7 days — keeps last-known quotes across non-trading hours/weekends
 ESTIMATE_CACHE_TTL = 30  # seconds
+NAV_HISTORY_CACHE_TTL = 3600  # 1 hour — full NAV history per fund
 
 # Market data settings
 MARKET_DATA_INTERVAL = 30  # seconds between stock quote fetches
