@@ -95,7 +95,7 @@ async def test_combined_holdings_sorted_by_weight(db_two_funds):
 
 
 @pytest.mark.asyncio
-async def test_combined_holdings_not_found():
+async def test_combined_holdings_not_found(db_two_funds):
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
         resp = await c.get("/api/portfolio/999/combined-holdings")
     assert resp.status_code == 404
