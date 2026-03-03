@@ -1,5 +1,6 @@
 """Background task scheduler for periodic market data updates."""
 
+import asyncio
 import logging
 from datetime import datetime, timezone, timedelta
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
@@ -20,6 +21,43 @@ from app.config import MARKET_DATA_INTERVAL
 logger = logging.getLogger(__name__)
 
 scheduler = AsyncIOScheduler()
+
+# Retry configuration for stock quote fetches
+_STOCK_FETCH_MAX_RETRIES = 3
+_STOCK_FETCH_BASE_DELAY = 1.0  # seconds; doubled on each retry
+
+
+async def _fetch_quotes_with_retry(stock_codes: list[str]) -> dict:
+    """Fetch stock quotes with exponential backoff retries on transient failure.
+
+    An empty result when codes were requested is treated as a transient failure
+    and retried up to _STOCK_FETCH_MAX_RETRIES times with exponential backoff.
+    Delays: base_delay * 2^0, base_delay * 2^1, ... (no sleep after last attempt).
+    """
+    if not stock_codes:
+        return {}
+    for attempt in range(_STOCK_FETCH_MAX_RETRIES):
+        quotes = market_data_service.get_stock_quotes(stock_codes)
+        if quotes:
+            if attempt > 0:
+                logger.info(
+                    f"Stock quote fetch succeeded on attempt {attempt + 1}/{_STOCK_FETCH_MAX_RETRIES}"
+                )
+            return quotes
+        # Empty result: retry if attempts remain
+        if attempt < _STOCK_FETCH_MAX_RETRIES - 1:
+            delay = _STOCK_FETCH_BASE_DELAY * (2**attempt)
+            logger.warning(
+                f"Stock quote fetch returned empty "
+                f"(attempt {attempt + 1}/{_STOCK_FETCH_MAX_RETRIES}), "
+                f"retrying in {delay:.1f}s"
+            )
+            await asyncio.sleep(delay)
+        else:
+            logger.error(
+                f"Stock quote fetch failed after {_STOCK_FETCH_MAX_RETRIES} attempts, giving up"
+            )
+    return {}
 
 
 def is_trading_hours() -> bool:
@@ -53,7 +91,7 @@ async def update_stock_quotes():
             if not all_stock_codes:
                 return
 
-            quotes = market_data_service.get_stock_quotes(list(all_stock_codes))
+            quotes = await _fetch_quotes_with_retry(list(all_stock_codes))
             for code, quote in quotes.items():
                 # Ensure cache key always uses 6-digit zero-padded pure numeric code
                 normalized = str(code).zfill(6)
