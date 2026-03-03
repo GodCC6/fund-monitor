@@ -30,6 +30,8 @@
 | B3: Sort portfolio fund list | By est_change_pct / profit_pct, client-side | ✅ |
 | B2: Manual refresh button | Portfolio detail page, calls load(), disabled while loading | ✅ |
 | B1: Estimate API graceful degradation | degraded: true flag, no error banner when market closed | ✅ |
+| B7: Portfolio combined holdings overlap | `GET /combined-holdings` endpoint + collapsible UI with risk badges | ✅ |
+| B10: Inline imports moved to module level | `chart.py` imports at module level | ✅ |
 
 ---
 
@@ -48,9 +50,9 @@ Ordered by priority and effort. Source: `docs/fund-monitor-review.md` (2026-02-2
 
 ### Tier 2 — High Value (P2 Differentiation)
 
-| ID | Task | Effort | Files |
-|----|------|--------|-------|
-| B7 | Portfolio combined holdings overlap view | 4h | `portfolio_routes.py`, `PortfolioDetail.vue`, new test file |
+| ID | Task | Effort | Files | Status |
+|----|------|--------|-------|--------|
+| B7 | Portfolio combined holdings overlap view | 4h | `portfolio_routes.py`, `PortfolioDetail.vue`, new test file | ✅ Done |
 
 ### Tier 3 — Engineering Hygiene
 
@@ -58,7 +60,7 @@ Ordered by priority and effort. Source: `docs/fund-monitor-review.md` (2026-02-2
 |----|------|--------|-------|
 | B8 | Tests for `chart.py` endpoints | 3h | New `test_api_chart.py` |
 | B9 | Migrate `_nav_history_cache` to shared `CacheService` | 1h | `market_data.py` |
-| B10 | Move inline `import akshare` / `import requests` to module level in `chart.py` | 15m | `chart.py` |
+| B10 | Move inline `import akshare` / `import requests` to module level in `chart.py` | 15m | `chart.py` | ✅ Done |
 | B11 | Scheduler retry with exponential backoff for failed stock fetches | 2h | `scheduler.py` |
 
 ### Tier 4 — Future / Optional
