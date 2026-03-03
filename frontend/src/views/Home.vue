@@ -33,6 +33,17 @@ async function create() {
   }
 }
 
+async function deletePortfolio(p: PortfolioSummary, event: Event) {
+  event.stopPropagation()
+  if (!confirm(`确认删除组合「${p.name}」？此操作不可恢复。`)) return
+  try {
+    await api.deletePortfolio(p.id)
+    await load()
+  } catch (e: unknown) {
+    error.value = e instanceof Error ? e.message : '删除失败'
+  }
+}
+
 onMounted(load)
 </script>
 
@@ -62,8 +73,11 @@ onMounted(load)
       class="card"
       @click="router.push(`/portfolio/${p.id}`)"
     >
-      <div class="card-name">{{ p.name }}</div>
-      <div class="card-date">{{ p.created_at?.slice(0, 10) }}</div>
+      <div class="card-info">
+        <div class="card-name">{{ p.name }}</div>
+        <div class="card-date">{{ p.created_at?.slice(0, 10) }}</div>
+      </div>
+      <button class="delete-btn" @click="deletePortfolio(p, $event)">删除</button>
     </div>
   </div>
 </template>
@@ -114,6 +128,12 @@ onMounted(load)
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
 }
 
+.card-info {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
 .card-name {
   font-size: 16px;
   font-weight: 600;
@@ -122,6 +142,17 @@ onMounted(load)
 .card-date {
   font-size: 12px;
   color: #999;
+}
+
+.delete-btn {
+  background: none;
+  border: 1px solid #ff4444;
+  color: #ff4444;
+  padding: 4px 12px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 12px;
+  flex-shrink: 0;
 }
 
 .hint {

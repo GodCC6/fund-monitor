@@ -186,3 +186,91 @@ async def test_add_fund_invalid_cost_nav_negative(db_session):
         )
         assert resp.status_code == 400
         assert resp.json()["detail"] == "cost_nav must be greater than 0"
+
+
+@pytest.mark.asyncio
+async def test_add_fund_duplicate_rejected(db_session):
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        create_resp = await client.post("/api/portfolio", json={"name": "组合A"})
+        pid = create_resp.json()["id"]
+
+        resp1 = await client.post(
+            f"/api/portfolio/{pid}/funds",
+            json={"fund_code": "000001", "shares": 1000.0, "cost_nav": 1.45},
+        )
+        assert resp1.status_code == 200
+
+        resp2 = await client.post(
+            f"/api/portfolio/{pid}/funds",
+            json={"fund_code": "000001", "shares": 500.0, "cost_nav": 1.50},
+        )
+        assert resp2.status_code == 409
+        assert resp2.json()["detail"] == "Fund already in portfolio"
+
+
+@pytest.mark.asyncio
+async def test_add_different_funds_allowed(db_session):
+    """Two different fund codes can both be added."""
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        create_resp = await client.post("/api/portfolio", json={"name": "组合A"})
+        pid = create_resp.json()["id"]
+
+        resp1 = await client.post(
+            f"/api/portfolio/{pid}/funds",
+            json={"fund_code": "000001", "shares": 1000.0, "cost_nav": 1.45},
+        )
+        assert resp1.status_code == 200
+
+        resp2 = await client.post(
+            f"/api/portfolio/{pid}/funds",
+            json={"fund_code": "000002", "shares": 500.0, "cost_nav": 1.20},
+        )
+        assert resp2.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_delete_portfolio(db_session):
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        create_resp = await client.post("/api/portfolio", json={"name": "组合A"})
+        pid = create_resp.json()["id"]
+
+        resp = await client.delete(f"/api/portfolio/{pid}")
+        assert resp.status_code == 200
+        assert resp.json()["status"] == "ok"
+
+        # Verify it's gone
+        list_resp = await client.get("/api/portfolio")
+        assert list_resp.status_code == 200
+        assert len(list_resp.json()) == 0
+
+
+@pytest.mark.asyncio
+async def test_delete_portfolio_not_found(db_session):
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        resp = await client.delete("/api/portfolio/9999")
+        assert resp.status_code == 404
+        assert resp.json()["detail"] == "Portfolio not found"
+
+
+@pytest.mark.asyncio
+async def test_delete_portfolio_also_removes_funds(db_session):
+    """Deleting a portfolio cascades to remove its fund entries."""
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        create_resp = await client.post("/api/portfolio", json={"name": "组合A"})
+        pid = create_resp.json()["id"]
+        await client.post(
+            f"/api/portfolio/{pid}/funds",
+            json={"fund_code": "000001", "shares": 1000.0, "cost_nav": 1.45},
+        )
+
+        del_resp = await client.delete(f"/api/portfolio/{pid}")
+        assert del_resp.status_code == 200
+
+        # Getting the deleted portfolio should return 404
+        get_resp = await client.get(f"/api/portfolio/{pid}")
+        assert get_resp.status_code == 404

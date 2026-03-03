@@ -154,6 +154,9 @@ export const api = {
       body: JSON.stringify({ name }),
     }),
 
+  deletePortfolio: (id: number) =>
+    request<unknown>(`/api/portfolio/${id}`, { method: 'DELETE' }),
+
   addFundToPortfolio: (id: number, fundCode: string, shares: number, costNav: number) =>
     request<unknown>(`/api/portfolio/${id}/funds`, {
       method: 'POST',

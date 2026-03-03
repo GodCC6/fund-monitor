@@ -47,9 +47,9 @@
 
 | ID | Task | Effort | Files | Status |
 |----|------|--------|-------|--------|
-| C1 | DELETE portfolio endpoint + Home.vue delete button | 1h | `portfolio_routes.py`, `Home.vue`, `api/index.ts` | 📋 |
-| C2 | Prevent duplicate fund in portfolio (check before add) | 30m | `portfolio_routes.py` | 📋 |
-| C3 | `isTradeTime()` frontend uses local browser time, not CST — fix to UTC+8 | 15m | `PortfolioDetail.vue` | 📋 |
+| C1 | DELETE portfolio endpoint + Home.vue delete button | 1h | `portfolio_routes.py`, `Home.vue`, `api/index.ts` | ✅ |
+| C2 | Prevent duplicate fund in portfolio (check before add) | 30m | `portfolio_routes.py` | ✅ |
+| C3 | `isTradeTime()` frontend uses local browser time, not CST — fix to UTC+8 | 15m | `PortfolioDetail.vue` | ✅ |
 
 **C1 details:** `portfolio_service.delete_portfolio()` already exists in `services/portfolio.py:26` — no API route or UI exposes it. Users can create portfolios but cannot delete them.
 

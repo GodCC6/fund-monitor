@@ -133,6 +133,15 @@ async def get_portfolio_detail(portfolio_id: int, db: AsyncSession = Depends(get
     )
 
 
+@router.delete("/{portfolio_id}")
+async def delete_portfolio(portfolio_id: int, db: AsyncSession = Depends(get_db)):
+    portfolio = await portfolio_service.get_portfolio(db, portfolio_id)
+    if portfolio is None:
+        raise HTTPException(status_code=404, detail="Portfolio not found")
+    await portfolio_service.delete_portfolio(db, portfolio_id)
+    return {"status": "ok"}
+
+
 @router.patch("/{portfolio_id}", response_model=PortfolioResponse)
 async def rename_portfolio(
     portfolio_id: int,
@@ -161,6 +170,9 @@ async def add_fund_to_portfolio(
     portfolio = await portfolio_service.get_portfolio(db, portfolio_id)
     if portfolio is None:
         raise HTTPException(status_code=404, detail="Portfolio not found")
+    existing = await portfolio_service.get_portfolio_funds(db, portfolio_id)
+    if any(pf.fund_code == req.fund_code for pf in existing):
+        raise HTTPException(status_code=409, detail="Fund already in portfolio")
     pf = await portfolio_service.add_fund(
         db, portfolio_id, req.fund_code, req.shares, req.cost_nav
     )

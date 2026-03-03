@@ -125,9 +125,10 @@ function isHoldingsStale(date: string | null): boolean {
 }
 
 function isTradeTime(): boolean {
-  const now = new Date()
-  const h = now.getHours()
-  const m = now.getMinutes()
+  // Always evaluate against CST (Asia/Shanghai, UTC+8) regardless of browser timezone
+  const cstNow = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Shanghai' }))
+  const h = cstNow.getHours()
+  const m = cstNow.getMinutes()
   const t = h * 60 + m
   return t >= 9 * 60 + 30 && t <= 15 * 60
 }
