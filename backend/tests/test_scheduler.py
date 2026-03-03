@@ -1,12 +1,11 @@
 """Tests for scheduler retry logic with exponential backoff."""
 
-import pytest
-from unittest.mock import patch, AsyncMock, call
+from unittest.mock import AsyncMock, call, patch
 
 from app.tasks.scheduler import (
-    _fetch_quotes_with_retry,
-    _STOCK_FETCH_MAX_RETRIES,
     _STOCK_FETCH_BASE_DELAY,
+    _STOCK_FETCH_MAX_RETRIES,
+    _fetch_quotes_with_retry,
 )
 
 STOCK_CODES = ["600519", "000858"]

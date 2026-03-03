@@ -21,15 +21,43 @@ jobs:
       - name: Install dependencies
         run: pip install -r backend/requirements-dev.txt
 
+      - name: Lint (ruff)
+        run: |
+          cd backend
+          ruff check .
+
       - name: Run tests
         run: |
           cd backend
           pytest tests/ -v
 
-  # ── Job 2: 部署到服务器（测试通过后才执行） ───────────────────
+  # ── Job 2: TypeScript type check ──────────────────────────────
+  typecheck:
+    name: Frontend TypeScript
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        run: |
+          cd frontend
+          npm ci
+
+      - name: TypeScript type check
+        run: |
+          cd frontend
+          npx vue-tsc --noEmit
+
+  # ── Job 3: 部署到服务器（测试通过后才执行） ───────────────────
   deploy:
     name: Deploy to Server
-    needs: test
+    needs: [test, typecheck]
     runs-on: ubuntu-latest
     environment: DEV-CN2-GIA-LE
 

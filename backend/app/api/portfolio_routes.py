@@ -1,25 +1,28 @@
 """Portfolio API routes."""
 
+import asyncio
 import bisect
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.database import get_db
-from app.services.portfolio import portfolio_service
-from app.services.fund_info import fund_info_service
-from app.services.market_data import market_data_service
-from app.services.estimator import fund_estimator
-from app.services.cache import stock_cache
 from app.api.schemas import (
     PortfolioCreateRequest,
-    PortfolioRenameRequest,
-    PortfolioFundAddRequest,
-    PortfolioResponse,
     PortfolioDetailResponse,
+    PortfolioFundAddRequest,
     PortfolioFundResponse,
+    PortfolioRenameRequest,
+    PortfolioResponse,
 )
+from app.models.database import get_db
+from app.services.cache import stock_cache
+from app.services.estimator import fund_estimator
+from app.services.fund_info import fund_info_service
+from app.services.market_data import market_data_service
+from app.services.portfolio import portfolio_service
+
+_CST = timezone(timedelta(hours=8))
 
 router = APIRouter(prefix="/api/portfolio", tags=["portfolio"])
 
@@ -49,15 +52,20 @@ async def get_portfolio_detail(portfolio_id: int, db: AsyncSession = Depends(get
 
     pf_list = await portfolio_service.get_portfolio_funds(db, portfolio_id)
 
+    # Batch-fetch all funds and holdings in two queries instead of N+1
+    fund_codes = [pf.fund_code for pf in pf_list]
+    funds_map = await fund_info_service.get_funds_by_codes(db, fund_codes)
+    holdings_map = await fund_info_service.get_holdings_by_fund_codes(db, fund_codes)
+
     # Check trading day once — avoids redundant API calls per fund
-    is_trading = market_data_service.is_market_trading_today()
+    is_trading = await market_data_service.is_market_trading_today_async()
 
     total_cost = 0.0
     total_estimate = 0.0
     funds_response = []
 
     for pf in pf_list:
-        fund = await fund_info_service.get_fund(db, pf.fund_code)
+        fund = funds_map.get(pf.fund_code)
         last_nav = fund.last_nav if fund and fund.last_nav else 0.0
         fund_name = fund.fund_name if fund else pf.fund_code
         est_nav = last_nav
@@ -67,7 +75,7 @@ async def get_portfolio_detail(portfolio_id: int, db: AsyncSession = Depends(get
 
         # Try real-time estimate only on trading days
         if fund and fund.last_nav and is_trading:
-            holdings = await fund_info_service.get_holdings(db, pf.fund_code)
+            holdings = holdings_map.get(pf.fund_code, [])
             if holdings:
                 holdings_date = holdings[0].report_date
                 stock_codes = [h.stock_code for h in holdings]
@@ -78,7 +86,7 @@ async def get_portfolio_detail(portfolio_id: int, db: AsyncSession = Depends(get
                     if _cached is not None:
                         quotes[_code] = _cached
                 if not quotes:
-                    quotes = market_data_service.get_stock_quotes(stock_codes)
+                    quotes = await market_data_service.get_stock_quotes_async(stock_codes)
                 holdings_data = [
                     {
                         "stock_code": h.stock_code,
@@ -192,10 +200,15 @@ async def get_combined_holdings(portfolio_id: int, db: AsyncSession = Depends(ge
 
     pf_list = await portfolio_service.get_portfolio_funds(db, portfolio_id)
 
+    # Batch-fetch all funds and holdings in two queries
+    fund_codes = [pf.fund_code for pf in pf_list]
+    funds_map = await fund_info_service.get_funds_by_codes(db, fund_codes)
+    holdings_map = await fund_info_service.get_holdings_by_fund_codes(db, fund_codes)
+
     # Step 1: Compute fund market values using last_nav as conservative estimate
     fund_values: dict[str, float] = {}
     for pf in pf_list:
-        fund = await fund_info_service.get_fund(db, pf.fund_code)
+        fund = funds_map.get(pf.fund_code)
         nav = fund.last_nav if fund and fund.last_nav else 0.0
         fund_values[pf.fund_code] = pf.shares * nav
 
@@ -206,9 +219,9 @@ async def get_combined_holdings(portfolio_id: int, db: AsyncSession = Depends(ge
     # Step 2: Weight each fund's holdings by its share of the portfolio
     combined: dict[str, dict] = {}
     for pf in pf_list:
-        fund = await fund_info_service.get_fund(db, pf.fund_code)
+        fund = funds_map.get(pf.fund_code)
         fund_weight = fund_values[pf.fund_code] / total_value
-        holdings = await fund_info_service.get_holdings(db, pf.fund_code)
+        holdings = holdings_map.get(pf.fund_code, [])
 
         for h in holdings:
             contribution = h.holding_ratio * fund_weight
@@ -267,20 +280,22 @@ async def get_portfolio_history(
     if not pf_list:
         return {"dates": [], "values": [], "costs": [], "profit_pcts": []}
 
-    today = datetime.now()
+    today = datetime.now(_CST)
     period_map = {
         "7d": today - timedelta(days=7),
         "30d": today - timedelta(days=30),
-        "ytd": datetime(today.year, 1, 1),
+        "ytd": datetime(today.year, 1, 1, tzinfo=_CST),
         "1y": today - timedelta(days=365),
     }
     cutoff_str = period_map.get(period, today - timedelta(days=30)).strftime("%Y-%m-%d")
     total_cost = sum(pf.shares * pf.cost_nav for pf in pf_list)
 
-    # Fetch NAV history for each fund (1-hour cached)
+    # Fetch NAV history for each fund (1-hour cached), run in parallel
+    nav_results = await asyncio.gather(
+        *[market_data_service.get_fund_nav_history_async(pf.fund_code) for pf in pf_list]
+    )
     full_navs: dict[str, dict[str, float]] = {
-        pf.fund_code: market_data_service.get_fund_nav_history(pf.fund_code)
-        for pf in pf_list
+        pf.fund_code: nav for pf, nav in zip(pf_list, nav_results)
     }
 
     # Collect all trading-day dates in the period where any fund has data

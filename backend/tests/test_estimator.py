@@ -1,7 +1,8 @@
 """Tests for fund estimator engine."""
 
+
 import pytest
-from unittest.mock import patch, MagicMock
+
 from app.services.estimator import FundEstimator
 
 

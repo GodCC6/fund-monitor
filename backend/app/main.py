@@ -1,13 +1,15 @@
 """FastAPI application entry point."""
 
 from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.models.database import init_db
+
+from app.api.chart import router as chart_router
 from app.api.fund import router as fund_router
 from app.api.portfolio_routes import router as portfolio_router
 from app.api.search import router as search_router
-from app.api.chart import router as chart_router
+from app.models.database import init_db
 from app.tasks.scheduler import start_scheduler, stop_scheduler
 
 

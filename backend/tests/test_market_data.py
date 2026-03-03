@@ -1,10 +1,12 @@
 """Tests for market data service."""
 
-import pytest
+from unittest.mock import MagicMock, patch
+
 import pandas as pd
-from unittest.mock import patch, MagicMock
-from app.services.market_data import MarketDataService
+import pytest
+
 from app.services.cache import nav_history_cache
+from app.services.market_data import MarketDataService
 
 
 @pytest.fixture

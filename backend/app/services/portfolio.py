@@ -1,7 +1,8 @@
 """Portfolio management service."""
 
-from sqlalchemy import select, delete
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.models.portfolio import Portfolio, PortfolioFund
 
 

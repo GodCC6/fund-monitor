@@ -2,9 +2,9 @@
 
 import pytest
 import pytest_asyncio
-from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+
 from app.models.database import Base
-from app.models.fund import Fund, FundHolding
 from app.services.fund_info import FundInfoService
 
 

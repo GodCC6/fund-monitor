@@ -1,10 +1,11 @@
 """Tests for fund API endpoints."""
 
+from unittest.mock import patch
+
 import pytest
 import pytest_asyncio
-from unittest.mock import patch, AsyncMock, MagicMock
-from httpx import AsyncClient, ASGITransport
-from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
+from httpx import ASGITransport, AsyncClient
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from app.main import app
 from app.models.database import Base, get_db
@@ -102,7 +103,7 @@ async def test_get_estimate(db_session):
             assert data["fund_code"] == "000001"
             assert data["est_change_pct"] > 0
             assert "details" in data
-            assert data["degraded"] == False
+            assert not data["degraded"]
 
 
 @pytest.mark.asyncio
@@ -121,7 +122,7 @@ async def test_get_estimate_non_trading_day(db_session):
             assert data["est_change_pct"] == 0.0
             assert data["est_nav"] == 1.5  # equals last_nav seeded in fixture
             assert data["details"] == []
-            assert data["degraded"] == True
+            assert data["degraded"]
 
 
 @pytest.mark.asyncio
@@ -140,6 +141,6 @@ async def test_get_estimate_degraded_quotes_unavailable(db_session):
             assert resp.status_code == 200
             data = resp.json()
             assert data["fund_code"] == "000001"
-            assert data["degraded"] == True
+            assert data["degraded"]
             assert data["est_change_pct"] == 0.0
             assert data["est_nav"] == 1.5  # equals last_nav seeded in fixture

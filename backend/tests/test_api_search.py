@@ -1,15 +1,15 @@
 """Tests for fund search endpoint."""
 
-import pytest
-import pandas as pd
 from unittest.mock import patch
-from httpx import AsyncClient, ASGITransport
+
+import pandas as pd
+import pytest
+import pytest_asyncio
+from httpx import ASGITransport, AsyncClient
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from app.main import app
-from app.models.database import get_db
-from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
-from app.models.database import Base
-import pytest_asyncio
+from app.models.database import Base, get_db
 
 
 @pytest_asyncio.fixture

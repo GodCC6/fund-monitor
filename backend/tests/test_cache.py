@@ -1,7 +1,7 @@
 """Tests for in-memory cache service."""
 
 import time
-import pytest
+
 from app.services.cache import CacheService
 
 

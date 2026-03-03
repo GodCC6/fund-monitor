@@ -1,15 +1,16 @@
 """Tests for manual NAV refresh endpoint."""
 
+from unittest.mock import patch
+
 import pytest
 import pytest_asyncio
-from unittest.mock import patch
-from httpx import AsyncClient, ASGITransport
-from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
+from httpx import ASGITransport, AsyncClient
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
+from app.api.fund import _is_trading_hours
 from app.main import app
 from app.models.database import Base, get_db
 from app.models.fund import Fund
-from app.api.fund import _is_trading_hours
 
 
 @pytest_asyncio.fixture
@@ -95,7 +96,7 @@ async def test_refresh_nav_allowed_outside_trading_hours(db_with_fund):
 
 def test_is_trading_hours_morning_open():
     """09:30 CST is within trading hours."""
-    from datetime import datetime, timezone, timedelta
+    from datetime import datetime, timedelta, timezone
     _CST = timezone(timedelta(hours=8))
     fake_now = datetime(2026, 2, 28, 9, 30, tzinfo=_CST)
     with patch("app.api.fund.datetime") as mock_dt:
@@ -105,7 +106,7 @@ def test_is_trading_hours_morning_open():
 
 def test_is_trading_hours_before_open():
     """09:00 CST (before opening) is NOT trading hours."""
-    from datetime import datetime, timezone, timedelta
+    from datetime import datetime, timedelta, timezone
     _CST = timezone(timedelta(hours=8))
     fake_now = datetime(2026, 2, 28, 9, 0, tzinfo=_CST)
     with patch("app.api.fund.datetime") as mock_dt:
@@ -115,7 +116,7 @@ def test_is_trading_hours_before_open():
 
 def test_is_trading_hours_afternoon_open():
     """13:00 CST is within afternoon trading hours."""
-    from datetime import datetime, timezone, timedelta
+    from datetime import datetime, timedelta, timezone
     _CST = timezone(timedelta(hours=8))
     fake_now = datetime(2026, 2, 28, 13, 0, tzinfo=_CST)
     with patch("app.api.fund.datetime") as mock_dt:
@@ -125,7 +126,7 @@ def test_is_trading_hours_afternoon_open():
 
 def test_is_trading_hours_evening():
     """20:30 CST (scheduled refresh time) is NOT trading hours."""
-    from datetime import datetime, timezone, timedelta
+    from datetime import datetime, timedelta, timezone
     _CST = timezone(timedelta(hours=8))
     fake_now = datetime(2026, 2, 28, 20, 30, tzinfo=_CST)
     with patch("app.api.fund.datetime") as mock_dt:

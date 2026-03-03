@@ -1,7 +1,7 @@
 # Fund Monitor — Product Roadmap
 
-> Last updated: 2026-03-03
-> Based on full codebase review at main @ `bb1cf3c` (all B1–B11 complete, 118 tests passing)
+> Last updated: 2026-03-04
+> Based on full codebase review at main @ `bb1cf3c` (all B1–B11, C1–C11 complete, 123 tests passing)
 
 ---
 
@@ -63,14 +63,14 @@
 
 | ID | Task | Effort | Files | Status |
 |----|------|--------|-------|--------|
-| C4 | Remove dead `estimate_cache` — created in `cache.py` but never used anywhere | 5m | `app/services/cache.py` | 📋 |
-| C5 | Migrate `_fund_name_cache` in `search.py` to `CacheService` (thread-safety + consistency) | 30m | `app/api/search.py`, `app/config.py` | 📋 |
-| C6 | Move inline imports in `scheduler.py:save_portfolio_snapshots` to module level | 15m | `app/tasks/scheduler.py` | 📋 |
-| C7 | Fix naive `datetime.now()` in `portfolio_routes.py:258` history cutoff to `datetime.now(_CST)` | 15m | `app/api/portfolio_routes.py` | 📋 |
-| C8 | Add composite DB index on `fund_estimate_snapshot(fund_code, snapshot_date)` | 30m | `app/models/fund.py` | 📋 |
-| C9 | N+1 query fix in `get_portfolio_detail` — batch `get_fund` + `get_holdings` calls | 2h | `app/api/portfolio_routes.py` | 📋 |
-| C10 | Wrap blocking `requests.get` calls in async handlers with `asyncio.to_thread()` | 2h | `app/api/fund.py`, `app/api/portfolio_routes.py`, `app/services/market_data.py` | 📋 |
-| C11 | Add `ruff` linting and TypeScript `tsc --noEmit` type-check step to CI | 1h | `.github/workflows/deploy.yml` | 📋 |
+| C4 | Remove dead `estimate_cache` — created in `cache.py` but never used anywhere | 5m | `app/services/cache.py` | ✅ |
+| C5 | Migrate `_fund_name_cache` in `search.py` to `CacheService` (thread-safety + consistency) | 30m | `app/api/search.py`, `app/config.py` | ✅ |
+| C6 | Move inline imports in `scheduler.py:save_portfolio_snapshots` to module level | 15m | `app/tasks/scheduler.py` | ✅ |
+| C7 | Fix naive `datetime.now()` in `portfolio_routes.py:258` history cutoff to `datetime.now(_CST)` | 15m | `app/api/portfolio_routes.py` | ✅ |
+| C8 | Add composite DB index on `fund_estimate_snapshot(fund_code, snapshot_date)` | 30m | `app/models/fund.py` | ✅ |
+| C9 | N+1 query fix in `get_portfolio_detail` — batch `get_fund` + `get_holdings` calls | 2h | `app/api/portfolio_routes.py` | ✅ |
+| C10 | Wrap blocking `requests.get` calls in async handlers with `asyncio.to_thread()` | 2h | `app/api/fund.py`, `app/api/portfolio_routes.py`, `app/services/market_data.py` | ✅ |
+| C11 | Add `ruff` linting and TypeScript `tsc --noEmit` type-check step to CI | 1h | `.github/workflows/deploy.yml` | ✅ |
 
 **C9 details:** `get_portfolio_detail()` issues ~20 sequential DB queries for a 10-fund portfolio (2 per fund: `get_fund()` + `get_holdings()`). Refactor to batch queries with `WHERE fund_code IN (...)`.
 

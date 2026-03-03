@@ -2,23 +2,27 @@
 
 import asyncio
 import logging
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timedelta, timezone
+
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
-from apscheduler.triggers.interval import IntervalTrigger
 from apscheduler.triggers.cron import CronTrigger
+from apscheduler.triggers.interval import IntervalTrigger
+from sqlalchemy import delete as sa_delete
+
+from app.config import MARKET_DATA_INTERVAL
+from app.models.database import async_session_factory
+from app.models.fund import FundEstimateSnapshot
+from app.models.portfolio import PortfolioSnapshot
+from app.services.cache import stock_cache
+from app.services.estimator import fund_estimator
+from app.services.fund_info import fund_info_service
+from app.services.market_data import market_data_service
+from app.services.portfolio import portfolio_service
+
+logger = logging.getLogger(__name__)
 
 # China Standard Time (UTC+8) — used for all trading-hours checks and cron triggers
 _CST = timezone(timedelta(hours=8))
-
-from app.services.market_data import market_data_service
-from app.services.cache import stock_cache
-from app.services.fund_info import fund_info_service
-from app.services.estimator import fund_estimator
-from app.models.database import async_session_factory
-from app.models.fund import FundEstimateSnapshot
-from app.config import MARKET_DATA_INTERVAL
-
-logger = logging.getLogger(__name__)
 
 scheduler = AsyncIOScheduler()
 
@@ -153,12 +157,7 @@ async def update_stock_quotes():
 async def save_portfolio_snapshots():
     """At market close (15:05 weekdays), record daily portfolio value snapshots."""
     try:
-        from app.models.portfolio import PortfolioSnapshot
-        from sqlalchemy import delete as sa_delete
-
         async with async_session_factory() as session:
-            from app.services.portfolio import portfolio_service
-
             portfolios = await portfolio_service.list_portfolios(session)
             today = datetime.now().strftime("%Y-%m-%d")
 

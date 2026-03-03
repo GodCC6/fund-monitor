@@ -1,17 +1,17 @@
 """Fund API routes."""
 
 import logging
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.schemas import FundEstimateResponse, FundResponse, HoldingResponse
 from app.models.database import get_db
+from app.services.cache import stock_cache
+from app.services.estimator import fund_estimator
 from app.services.fund_info import fund_info_service
 from app.services.market_data import market_data_service
-from app.services.estimator import fund_estimator
-from app.services.cache import stock_cache
-from app.api.schemas import FundResponse, FundEstimateResponse, HoldingResponse
 
 logger = logging.getLogger(__name__)
 
@@ -82,7 +82,7 @@ async def refresh_nav(fund_code: str, db: AsyncSession = Depends(get_db)):
     if fund is None:
         raise HTTPException(status_code=404, detail="Fund not found")
 
-    nav_data = market_data_service.get_fund_nav(fund_code)
+    nav_data = await market_data_service.get_fund_nav_async(fund_code)
     if nav_data is None:
         raise HTTPException(status_code=503, detail="NAV data source unavailable")
 
@@ -127,12 +127,12 @@ async def get_estimate(fund_code: str, db: AsyncSession = Depends(get_db)):
     # today.  Guards against making slow paginated API calls on non-trading days
     # or when the app starts fresh before the first scheduler run on a holiday.
     if not stock_quotes:
-        is_trading = market_data_service.is_market_trading_today()
+        is_trading = await market_data_service.is_market_trading_today_async()
         logger.info(
             f"[estimate] fund={fund_code} cache empty, is_trading_today={is_trading}"
         )
         if is_trading:
-            stock_quotes = market_data_service.get_stock_quotes(stock_codes)
+            stock_quotes = await market_data_service.get_stock_quotes_async(stock_codes)
             logger.info(
                 f"[estimate] fund={fund_code} live fetch returned"
                 f" {len(stock_quotes)} quotes, keys={list(stock_quotes.keys())}"

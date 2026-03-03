@@ -1,12 +1,10 @@
 """Market data service using akshare for fund info and eastmoney API for stock quotes."""
 
+import asyncio
 import logging
 import time
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any
-
-# China Standard Time (UTC+8)
-_CST = timezone(timedelta(hours=8))
 
 import akshare as ak
 import requests
@@ -14,6 +12,9 @@ import requests
 from app.services.cache import nav_history_cache
 
 logger = logging.getLogger(__name__)
+
+# China Standard Time (UTC+8)
+_CST = timezone(timedelta(hours=8))
 
 # Cache for is_market_trading_today(): (timestamp, result)
 _trading_today_cache: tuple[float, bool] | None = None
@@ -319,6 +320,27 @@ class MarketDataService:
         except Exception as e:
             logger.error(f"Failed to fetch NAV history for {fund_code}: {e}")
             return {}
+
+    # ── Async wrappers for use in FastAPI async handlers ──────────────────────
+    # The synchronous methods above use requests/akshare (blocking I/O).
+    # Calling them directly from async handlers blocks the event loop.
+    # These wrappers delegate to a thread pool via asyncio.to_thread().
+
+    async def is_market_trading_today_async(self) -> bool:
+        return await asyncio.to_thread(self.is_market_trading_today)
+
+    async def get_stock_quotes_async(
+        self, stock_codes: list[str]
+    ) -> dict[str, dict[str, Any]]:
+        return await asyncio.to_thread(self.get_stock_quotes, stock_codes)
+
+    async def get_fund_nav_async(
+        self, fund_code: str
+    ) -> dict[str, Any] | None:
+        return await asyncio.to_thread(self.get_fund_nav, fund_code)
+
+    async def get_fund_nav_history_async(self, fund_code: str) -> dict[str, float]:
+        return await asyncio.to_thread(self.get_fund_nav_history, fund_code)
 
 
 # Global instance

@@ -1,8 +1,9 @@
 """Chart data API routes."""
 
+from datetime import datetime, timedelta, timezone
+
 import akshare as ak
 import requests as _requests
-from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -10,7 +11,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.database import get_db
 from app.models.fund import FundEstimateSnapshot
 from app.services.fund_info import fund_info_service
-from app.services.market_data import market_data_service
 
 # China Standard Time (UTC+8)
 _CST = timezone(timedelta(hours=8))

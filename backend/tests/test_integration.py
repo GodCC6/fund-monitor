@@ -1,10 +1,11 @@
 """Integration test: full flow from fund setup to estimate calculation."""
 
+from unittest.mock import patch
+
 import pytest
 import pytest_asyncio
-from unittest.mock import patch
-from httpx import AsyncClient, ASGITransport
-from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
+from httpx import ASGITransport, AsyncClient
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from app.main import app
 from app.models.database import Base, get_db
@@ -47,15 +48,6 @@ async def test_full_flow(db_session):
             "股票名称": ["贵州茅台", "五粮液"],
             "占净值比例": [8.9, 6.5],
             "季度": ["2025年4季度股票投资明细", "2025年4季度股票投资明细"],
-        }
-    )
-    mock_stock_df = pd.DataFrame(
-        {
-            "代码": ["600519", "000858"],
-            "名称": ["贵州茅台", "五粮液"],
-            "最新价": [1800.0, 150.0],
-            "涨跌幅": [2.0, -1.0],
-            "昨收": [1764.7, 151.5],
         }
     )
 

@@ -12,7 +12,7 @@ unaffected because they don't make HTTP requests and don't use get_db.
 """
 
 import pytest
-from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from app.main import app
 from app.models.database import Base, get_db

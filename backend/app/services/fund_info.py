@@ -1,7 +1,10 @@
 """Fund information CRUD service."""
 
-from sqlalchemy import select, delete
+from collections import defaultdict
+
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.models.fund import Fund, FundHolding
 
 
@@ -76,6 +79,31 @@ class FundInfoService:
             select(FundHolding).where(FundHolding.fund_code == fund_code)
         )
         return list(result.scalars().all())
+
+    async def get_funds_by_codes(
+        self, session: AsyncSession, fund_codes: list[str]
+    ) -> dict[str, Fund]:
+        """Fetch multiple funds in a single query. Returns {fund_code: Fund}."""
+        if not fund_codes:
+            return {}
+        result = await session.execute(
+            select(Fund).where(Fund.fund_code.in_(fund_codes))
+        )
+        return {f.fund_code: f for f in result.scalars().all()}
+
+    async def get_holdings_by_fund_codes(
+        self, session: AsyncSession, fund_codes: list[str]
+    ) -> dict[str, list[FundHolding]]:
+        """Fetch holdings for multiple funds in a single query. Returns {fund_code: [FundHolding]}."""
+        if not fund_codes:
+            return {}
+        result = await session.execute(
+            select(FundHolding).where(FundHolding.fund_code.in_(fund_codes))
+        )
+        grouped: dict[str, list[FundHolding]] = defaultdict(list)
+        for h in result.scalars().all():
+            grouped[h.fund_code].append(h)
+        return dict(grouped)
 
 
 fund_info_service = FundInfoService()

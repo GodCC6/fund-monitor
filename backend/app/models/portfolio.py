@@ -1,8 +1,10 @@
 """Portfolio and PortfolioFund models."""
 
 from datetime import datetime
-from sqlalchemy import String, Float, Integer
+
+from sqlalchemy import Float, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column
+
 from app.models.database import Base
 
 

@@ -1,10 +1,11 @@
 """Tests for intraday chart endpoint — baseline normalization."""
 
+from unittest.mock import patch
+
 import pytest
 import pytest_asyncio
-from unittest.mock import patch
-from httpx import AsyncClient, ASGITransport
-from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
+from httpx import ASGITransport, AsyncClient
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from app.main import app
 from app.models.database import Base, get_db
@@ -94,7 +95,7 @@ async def test_intraday_navs_are_re_anchored_to_consistent_baseline(db_with_snap
     Even if fund.last_nav changed mid-session, the chart should be smooth:
     no level jump between early and late snapshots.
     """
-    from datetime import datetime, timezone, timedelta
+    from datetime import datetime, timedelta, timezone
     _CST = timezone(timedelta(hours=8))
     fake_now = datetime(2026, 2, 24, 15, 0, tzinfo=_CST)  # a weekday during session
 
@@ -133,7 +134,7 @@ async def test_intraday_navs_are_re_anchored_to_consistent_baseline(db_with_snap
 @pytest.mark.asyncio
 async def test_intraday_empty_snapshots(db_with_snapshots):
     """Intraday endpoint returns empty lists when no snapshots exist for a date."""
-    from datetime import datetime, timezone, timedelta
+    from datetime import datetime, timedelta, timezone
     _CST = timezone(timedelta(hours=8))
     # Move "today" to a different date that has no snapshots
     fake_now = datetime(2026, 2, 25, 10, 0, tzinfo=_CST)  # Wednesday, no snapshots
@@ -152,7 +153,7 @@ async def test_intraday_empty_snapshots(db_with_snapshots):
 @pytest.mark.asyncio
 async def test_intraday_single_snapshot_no_jump(db_with_snapshots):
     """With a single snapshot, base_nav is recovered correctly and navs has one entry."""
-    from datetime import datetime, timezone, timedelta
+    from datetime import datetime, timedelta, timezone
     _CST = timezone(timedelta(hours=8))
     fake_now = datetime(2026, 2, 24, 15, 0, tzinfo=_CST)
 
@@ -229,7 +230,7 @@ async def test_isolated_spike_is_suppressed(db_with_spike):
     The middle point (09:33) deviates >= 0.3 % from both neighbours while those
     neighbours are within 0.3 % of each other — the suppressor must replace it.
     """
-    from datetime import datetime, timezone, timedelta
+    from datetime import datetime, timedelta, timezone
     _CST = timezone(timedelta(hours=8))
     fake_now = datetime(2026, 2, 25, 15, 0, tzinfo=_CST)
 
@@ -258,7 +259,7 @@ async def test_legitimate_trend_not_suppressed(db_with_spike):
     Three consecutive declining points all differ from each other, so the
     neighbours are NOT close to each other — the suppressor must leave them alone.
     """
-    from datetime import datetime, timezone, timedelta
+    from datetime import datetime, timedelta, timezone
     _CST = timezone(timedelta(hours=8))
 
     # Seed a separate DB with a genuine trend (three declining points)

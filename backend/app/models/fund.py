@@ -1,8 +1,10 @@
 """Fund and FundHolding models."""
 
 from datetime import datetime
-from sqlalchemy import String, Float, Text
+
+from sqlalchemy import Float, Index, String
 from sqlalchemy.orm import Mapped, mapped_column
+
 from app.models.database import Base
 
 
@@ -35,9 +37,12 @@ class FundHolding(Base):
 
 class FundEstimateSnapshot(Base):
     __tablename__ = "fund_estimate_snapshot"
+    __table_args__ = (
+        Index("ix_fund_estimate_snapshot_code_date", "fund_code", "snapshot_date"),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
-    fund_code: Mapped[str] = mapped_column(String(10), index=True)
+    fund_code: Mapped[str] = mapped_column(String(10))
     est_nav: Mapped[float] = mapped_column(Float)
     est_change_pct: Mapped[float] = mapped_column(Float)
     snapshot_time: Mapped[str] = mapped_column(String(5))  # "HH:MM"
