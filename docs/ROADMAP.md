@@ -59,10 +59,10 @@ Ordered by priority and effort. Source: `docs/fund-monitor-review.md` (2026-02-2
 | ID | Task | Effort | Files |
 |----|------|--------|-------|
 | B8 | Tests for `chart.py` endpoints | 3h | New `test_api_chart.py` | ✅ Done |
-| B9 | Migrate `_nav_history_cache` to shared `CacheService` | 1h | `market_data.py` |
+| B9 | Migrate `_nav_history_cache` to shared `CacheService` | 1h | `market_data.py` | ✅ Done |
 | B10 | Move inline `import akshare` / `import requests` to module level in `chart.py` | 15m | `chart.py` | ✅ Done |
 | B8-infra | pytest `asyncio_mode=auto` + conftest.py safeguard (in-memory DB for all async tests) | 1h | `pyproject.toml`, `tests/conftest.py` | ✅ Done |
-| B11 | Scheduler retry with exponential backoff for failed stock fetches | 2h | `scheduler.py` |
+| B11 | Scheduler retry with exponential backoff for failed stock fetches | 2h | `scheduler.py` | ✅ Done |
 
 ### Tier 4 — Future / Optional
 
