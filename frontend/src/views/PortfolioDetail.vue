@@ -201,6 +201,11 @@ function calcCagr(costTotal: number, currentValue: number, addedAt: string | nul
   const now = new Date()
   const years = (now.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24 * 365.25)
   if (years < 1 / 365.25) return null // less than one day — not meaningful
+  // For short periods (<1 year), annualization produces unrealistic numbers
+  // Show total return % instead
+  if (years < 1) {
+    return ((currentValue / costTotal) - 1) * 100
+  }
   const cagr = (Math.pow(currentValue / costTotal, 1 / years) - 1) * 100
   return cagr
 }
@@ -208,7 +213,7 @@ function calcCagr(costTotal: number, currentValue: number, addedAt: string | nul
 function formatCagr(val: number | null): string {
   if (val === null) return '—'
   const sign = val >= 0 ? '+' : ''
-  return `${sign}${val.toFixed(2)}%/年`
+  return `${sign}${val.toFixed(2)}%`
 }
 
 // CAGR for portfolio total: use earliest fund's added_at
@@ -343,7 +348,7 @@ onUnmounted(() => {
         </span>
       </div>
       <div class="summary-item">
-        <span class="label">年化收益率(CAGR)</span>
+        <span class="label">收益率</span>
         <span :class="portfolioCagr !== null ? pctClass(portfolioCagr) : ''">
           {{ formatCagr(portfolioCagr) }}
         </span>
@@ -402,7 +407,7 @@ onUnmounted(() => {
               v-if="calcCagr(f.cost, f.current_value, f.added_at) !== null"
               :class="pctClass(calcCagr(f.cost, f.current_value, f.added_at)!)"
             >
-              CAGR {{ formatCagr(calcCagr(f.cost, f.current_value, f.added_at)) }}
+              {{ formatCagr(calcCagr(f.cost, f.current_value, f.added_at)) }}
             </span>
             <span
               v-if="f.holdings_date"
