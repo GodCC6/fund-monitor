@@ -45,11 +45,13 @@ class PortfolioFundAddRequest(BaseModel):
     fund_code: str
     shares: float
     cost_nav: float
+    purchase_date: str | None = None  # YYYY-MM-DD, user's actual purchase date
 
 
 class PortfolioFundUpdateRequest(BaseModel):
     shares: float
     cost_nav: float
+    purchase_date: str | None = None  # YYYY-MM-DD; None clears it
 
 
 class PortfolioResponse(BaseModel):
@@ -72,6 +74,7 @@ class PortfolioFundResponse(BaseModel):
     coverage: float
     holdings_date: str | None = None
     added_at: str | None = None
+    purchase_date: str | None = None
 
 
 class PortfolioDetailResponse(BaseModel):

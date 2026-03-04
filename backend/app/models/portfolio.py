@@ -45,3 +45,4 @@ class PortfolioFund(Base):
     added_at: Mapped[str] = mapped_column(
         String(30), default=lambda: datetime.now().isoformat()
     )
+    purchase_date: Mapped[str | None] = mapped_column(String(10), nullable=True, default=None)

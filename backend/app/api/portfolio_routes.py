@@ -125,6 +125,7 @@ async def get_portfolio_detail(portfolio_id: int, db: AsyncSession = Depends(get
                 coverage=round(coverage, 4),
                 holdings_date=holdings_date,
                 added_at=pf.added_at,
+                purchase_date=pf.purchase_date,
             )
         )
 
@@ -184,7 +185,7 @@ async def add_fund_to_portfolio(
     if any(pf.fund_code == req.fund_code for pf in existing):
         raise HTTPException(status_code=409, detail="Fund already in portfolio")
     pf = await portfolio_service.add_fund(
-        db, portfolio_id, req.fund_code, req.shares, req.cost_nav
+        db, portfolio_id, req.fund_code, req.shares, req.cost_nav, req.purchase_date
     )
     return {"status": "ok", "fund_code": pf.fund_code}
 
@@ -269,10 +270,10 @@ async def update_fund_in_portfolio(
         raise HTTPException(status_code=400, detail="shares must be greater than 0")
     if req.cost_nav <= 0:
         raise HTTPException(status_code=400, detail="cost_nav must be greater than 0")
-    pf = await portfolio_service.update_fund(db, portfolio_id, fund_code, req.shares, req.cost_nav)
+    pf = await portfolio_service.update_fund(db, portfolio_id, fund_code, req.shares, req.cost_nav, req.purchase_date)
     if pf is None:
         raise HTTPException(status_code=404, detail="Fund not found in portfolio")
-    return {"status": "ok", "fund_code": pf.fund_code, "shares": pf.shares, "cost_nav": pf.cost_nav}
+    return {"status": "ok", "fund_code": pf.fund_code, "shares": pf.shares, "cost_nav": pf.cost_nav, "purchase_date": pf.purchase_date}
 
 
 @router.delete("/{portfolio_id}/funds/{fund_code}")

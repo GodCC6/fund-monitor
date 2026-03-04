@@ -48,12 +48,14 @@ class PortfolioService:
         fund_code: str,
         shares: float,
         cost_nav: float,
+        purchase_date: str | None = None,
     ) -> PortfolioFund:
         pf = PortfolioFund(
             portfolio_id=portfolio_id,
             fund_code=fund_code,
             shares=shares,
             cost_nav=cost_nav,
+            purchase_date=purchase_date,
         )
         session.add(pf)
         await session.commit()
@@ -74,6 +76,7 @@ class PortfolioService:
         fund_code: str,
         shares: float,
         cost_nav: float,
+        purchase_date: str | None = None,
     ) -> PortfolioFund | None:
         result = await session.execute(
             select(PortfolioFund).where(
@@ -86,6 +89,7 @@ class PortfolioService:
             return None
         pf.shares = shares
         pf.cost_nav = cost_nav
+        pf.purchase_date = purchase_date
         await session.commit()
         return pf
 

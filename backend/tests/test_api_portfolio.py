@@ -352,3 +352,89 @@ async def test_update_fund_position_invalid_cost_nav(db_session):
         )
         assert resp.status_code == 400
         assert resp.json()["detail"] == "cost_nav must be greater than 0"
+
+
+@pytest.mark.asyncio
+async def test_add_fund_with_purchase_date(db_session):
+    """Adding a fund with purchase_date stores and returns it in portfolio detail."""
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        create_resp = await client.post("/api/portfolio", json={"name": "组合A"})
+        pid = create_resp.json()["id"]
+
+        resp = await client.post(
+            f"/api/portfolio/{pid}/funds",
+            json={"fund_code": "000001", "shares": 1000.0, "cost_nav": 1.45, "purchase_date": "2024-01-15"},
+        )
+        assert resp.status_code == 200
+
+        detail_resp = await client.get(f"/api/portfolio/{pid}")
+        assert detail_resp.status_code == 200
+        funds = detail_resp.json()["funds"]
+        assert len(funds) == 1
+        assert funds[0]["purchase_date"] == "2024-01-15"
+
+
+@pytest.mark.asyncio
+async def test_add_fund_without_purchase_date_defaults_null(db_session):
+    """Adding a fund without purchase_date returns purchase_date=null."""
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        create_resp = await client.post("/api/portfolio", json={"name": "组合A"})
+        pid = create_resp.json()["id"]
+
+        await client.post(
+            f"/api/portfolio/{pid}/funds",
+            json={"fund_code": "000001", "shares": 1000.0, "cost_nav": 1.45},
+        )
+
+        detail_resp = await client.get(f"/api/portfolio/{pid}")
+        funds = detail_resp.json()["funds"]
+        assert funds[0]["purchase_date"] is None
+        # added_at should still be present for fallback
+        assert funds[0]["added_at"] is not None
+
+
+@pytest.mark.asyncio
+async def test_update_fund_position_with_purchase_date(db_session):
+    """PATCH can set purchase_date on an existing position."""
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        create_resp = await client.post("/api/portfolio", json={"name": "组合A"})
+        pid = create_resp.json()["id"]
+        await client.post(
+            f"/api/portfolio/{pid}/funds",
+            json={"fund_code": "000001", "shares": 1000.0, "cost_nav": 1.45},
+        )
+
+        resp = await client.patch(
+            f"/api/portfolio/{pid}/funds/000001",
+            json={"shares": 1500.0, "cost_nav": 1.50, "purchase_date": "2023-06-01"},
+        )
+        assert resp.status_code == 200
+        assert resp.json()["purchase_date"] == "2023-06-01"
+
+        detail_resp = await client.get(f"/api/portfolio/{pid}")
+        funds = detail_resp.json()["funds"]
+        assert funds[0]["purchase_date"] == "2023-06-01"
+        assert funds[0]["shares"] == 1500.0
+
+
+@pytest.mark.asyncio
+async def test_update_fund_clears_purchase_date_when_null(db_session):
+    """PATCH with purchase_date=null clears the purchase date."""
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        create_resp = await client.post("/api/portfolio", json={"name": "组合A"})
+        pid = create_resp.json()["id"]
+        await client.post(
+            f"/api/portfolio/{pid}/funds",
+            json={"fund_code": "000001", "shares": 1000.0, "cost_nav": 1.45, "purchase_date": "2023-06-01"},
+        )
+
+        resp = await client.patch(
+            f"/api/portfolio/{pid}/funds/000001",
+            json={"shares": 1000.0, "cost_nav": 1.45, "purchase_date": None},
+        )
+        assert resp.status_code == 200
+        assert resp.json()["purchase_date"] is None
