@@ -49,6 +49,7 @@ const showAddForm = ref(false)
 const addFundCode = ref('')
 const addShares = ref<number | undefined>(undefined)
 const addCostNav = ref<number | undefined>(undefined)
+const addPurchaseDate = ref('')
 const addError = ref('')
 const addLoading = ref(false)
 
@@ -157,10 +158,11 @@ async function addFund() {
     } catch {
       // Fund may already exist, continue
     }
-    await api.addFundToPortfolio(portfolioId.value, code, addShares.value, addCostNav.value)
+    await api.addFundToPortfolio(portfolioId.value, code, addShares.value, addCostNav.value, addPurchaseDate.value || null)
     addFundCode.value = ''
     addShares.value = undefined
     addCostNav.value = undefined
+    addPurchaseDate.value = ''
     showAddForm.value = false
     await load()
   } catch (e: unknown) {
@@ -195,19 +197,36 @@ function formatMoney(val: number): string {
   return val.toFixed(2)
 }
 
-function calcCagr(costTotal: number, currentValue: number, addedAt: string | null): number | null {
-  if (!addedAt || costTotal <= 0 || currentValue <= 0) return null
-  const startDate = new Date(addedAt)
-  const now = new Date()
-  const years = (now.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24 * 365.25)
-  if (years < 1 / 365.25) return null // less than one day — not meaningful
-  // For short periods (<1 year), annualization produces unrealistic numbers
-  // Show total return % instead
+// Returns years held given purchase_date (preferred) or added_at fallback
+function yearsHeld(purchaseDate: string | null, addedAt: string | null): number | null {
+  const dateStr = purchaseDate ?? addedAt
+  if (!dateStr) return null
+  const years = (Date.now() - new Date(dateStr).getTime()) / (1000 * 60 * 60 * 24 * 365.25)
+  if (years < 1 / 365.25) return null // less than one day
+  return years
+}
+
+function calcCagr(costTotal: number, currentValue: number, purchaseDate: string | null, addedAt: string | null): number | null {
+  if (costTotal <= 0 || currentValue <= 0) return null
+  const years = yearsHeld(purchaseDate, addedAt)
+  if (years === null) return null
+  // For holdings < 1 year: show total return %; >= 1 year: show CAGR
   if (years < 1) {
     return ((currentValue / costTotal) - 1) * 100
   }
-  const cagr = (Math.pow(currentValue / costTotal, 1 / years) - 1) * 100
-  return cagr
+  return (Math.pow(currentValue / costTotal, 1 / years) - 1) * 100
+}
+
+// Label: '累计收益率' for < 1 year, '年化收益率' for >= 1 year
+function returnLabel(purchaseDate: string | null, addedAt: string | null): string {
+  const years = yearsHeld(purchaseDate, addedAt)
+  if (years === null) return '收益率'
+  return years >= 1 ? '年化收益率' : '累计收益率'
+}
+
+// Source indicator: which date is being used
+function dateSource(purchaseDate: string | null): string {
+  return purchaseDate ? '基于买入日期' : '基于添加日期(估算)'
 }
 
 function formatCagr(val: number | null): string {
@@ -216,29 +235,46 @@ function formatCagr(val: number | null): string {
   return `${sign}${val.toFixed(2)}%`
 }
 
-// CAGR for portfolio total: use earliest fund's added_at
+// Return for portfolio total: use earliest effective date across funds
 const portfolioCagr = computed(() => {
   const funds = portfolio.value?.funds ?? []
   if (funds.length === 0) return null
   const earliest = funds.reduce<string | null>((min, f) => {
-    if (!f.added_at) return min
-    return min === null || f.added_at < min ? f.added_at : min
+    const date = f.purchase_date ?? f.added_at
+    if (!date) return min
+    return min === null || date < min ? date : min
   }, null)
   if (!earliest || !portfolio.value) return null
-  return calcCagr(portfolio.value.total_cost, portfolio.value.total_estimate, earliest)
+  return calcCagr(portfolio.value.total_cost, portfolio.value.total_estimate, earliest, null)
+})
+
+const portfolioReturnLabel = computed(() => {
+  const funds = portfolio.value?.funds ?? []
+  if (funds.length === 0) return '收益率'
+  const earliest = funds.reduce<string | null>((min, f) => {
+    const date = f.purchase_date ?? f.added_at
+    if (!date) return min
+    return min === null || date < min ? date : min
+  }, null)
+  if (!earliest) return '收益率'
+  const years = yearsHeld(earliest, null)
+  if (years === null) return '收益率'
+  return years >= 1 ? '年化收益率' : '累计收益率'
 })
 
 // Edit fund position
 const editingFund = ref<string | null>(null)
 const editShares = ref<number | undefined>(undefined)
 const editCostNav = ref<number | undefined>(undefined)
+const editPurchaseDate = ref('')
 const editError = ref('')
 const editLoading = ref(false)
 
-function startEdit(f: { fund_code: string; shares: number; cost_nav: number }) {
+function startEdit(f: { fund_code: string; shares: number; cost_nav: number; purchase_date: string | null }) {
   editingFund.value = f.fund_code
   editShares.value = f.shares
   editCostNav.value = f.cost_nav
+  editPurchaseDate.value = f.purchase_date ?? ''
   editError.value = ''
 }
 
@@ -246,6 +282,7 @@ function cancelEdit() {
   editingFund.value = null
   editShares.value = undefined
   editCostNav.value = undefined
+  editPurchaseDate.value = ''
   editError.value = ''
 }
 
@@ -258,7 +295,7 @@ async function saveEdit(fundCode: string) {
   editLoading.value = true
   editError.value = ''
   try {
-    await api.updateFundInPortfolio(portfolioId.value, fundCode, editShares.value, editCostNav.value)
+    await api.updateFundInPortfolio(portfolioId.value, fundCode, editShares.value, editCostNav.value, editPurchaseDate.value || null)
     editingFund.value = null
     await load()
   } catch (e: unknown) {
@@ -348,7 +385,7 @@ onUnmounted(() => {
         </span>
       </div>
       <div class="summary-item">
-        <span class="label">收益率</span>
+        <span class="label">{{ portfolioReturnLabel }}</span>
         <span :class="portfolioCagr !== null ? pctClass(portfolioCagr) : ''">
           {{ formatCagr(portfolioCagr) }}
         </span>
@@ -404,10 +441,11 @@ onUnmounted(() => {
             <span>份额 {{ f.shares }}</span>
             <span>成本 {{ f.cost_nav.toFixed(4) }}</span>
             <span
-              v-if="calcCagr(f.cost, f.current_value, f.added_at) !== null"
-              :class="pctClass(calcCagr(f.cost, f.current_value, f.added_at)!)"
+              v-if="calcCagr(f.cost, f.current_value, f.purchase_date, f.added_at) !== null"
+              :class="pctClass(calcCagr(f.cost, f.current_value, f.purchase_date, f.added_at)!)"
+              :title="dateSource(f.purchase_date)"
             >
-              {{ formatCagr(calcCagr(f.cost, f.current_value, f.added_at)) }}
+              {{ returnLabel(f.purchase_date, f.added_at) }} {{ formatCagr(calcCagr(f.cost, f.current_value, f.purchase_date, f.added_at)) }}
             </span>
             <span
               v-if="f.holdings_date"
@@ -422,6 +460,10 @@ onUnmounted(() => {
           <div v-if="editingFund === f.fund_code" class="edit-form" @click.stop>
             <input v-model.number="editShares" placeholder="份额" type="number" step="0.01" />
             <input v-model.number="editCostNav" placeholder="成本净值" type="number" step="0.0001" />
+            <div class="date-field">
+              <label class="date-label">首次买入日期（可选）</label>
+              <input v-model="editPurchaseDate" type="date" />
+            </div>
             <p v-if="editError" class="error">{{ editError }}</p>
             <div class="edit-form-actions">
               <button @click.stop="saveEdit(f.fund_code)" :disabled="editLoading">
@@ -432,7 +474,7 @@ onUnmounted(() => {
           </div>
         </div>
         <div class="fund-actions">
-          <button class="edit-btn" @click.stop="editingFund === f.fund_code ? cancelEdit() : startEdit(f)">
+          <button class="edit-btn" @click.stop="editingFund === f.fund_code ? cancelEdit() : startEdit({ fund_code: f.fund_code, shares: f.shares, cost_nav: f.cost_nav, purchase_date: f.purchase_date })">
             {{ editingFund === f.fund_code ? '×' : '编辑' }}
           </button>
           <button class="remove-btn" @click.stop="removeFund(f.fund_code)">删除</button>
@@ -516,12 +558,16 @@ onUnmounted(() => {
         </div>
         <input v-model.number="addShares" placeholder="份额" type="number" step="0.01" />
         <input v-model.number="addCostNav" placeholder="成本净值" type="number" step="0.0001" />
+        <div class="date-field">
+          <label class="date-label">首次买入日期（可选）</label>
+          <input v-model="addPurchaseDate" type="date" />
+        </div>
         <p v-if="addError" class="error">{{ addError }}</p>
         <div class="add-form-actions">
           <button @click="addFund" :disabled="addLoading">
             {{ addLoading ? '添加中...' : '确认添加' }}
           </button>
-          <button class="cancel-btn" :disabled="addLoading" @click="showAddForm = false; clearSearch()">取消</button>
+          <button class="cancel-btn" :disabled="addLoading" @click="showAddForm = false; clearSearch(); addPurchaseDate = ''">取消</button>
         </div>
       </div>
     </div>
@@ -1084,5 +1130,24 @@ onUnmounted(() => {
   font-size: 11px;
   color: #bbb;
   margin-top: 8px;
+}
+
+.date-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.date-label {
+  font-size: 11px;
+  color: #aaa;
+}
+
+.date-field input[type="date"] {
+  padding: 6px 10px;
+  border: 1px solid #ccc;
+  border-radius: 6px;
+  font-size: 13px;
+  color: #333;
 }
 </style>

@@ -55,6 +55,7 @@ export interface PortfolioFund {
   coverage: number
   holdings_date: string | null
   added_at: string | null
+  purchase_date: string | null
 }
 
 export interface PortfolioDetail {
@@ -158,19 +159,19 @@ export const api = {
   deletePortfolio: (id: number) =>
     request<unknown>(`/api/portfolio/${id}`, { method: 'DELETE' }),
 
-  addFundToPortfolio: (id: number, fundCode: string, shares: number, costNav: number) =>
+  addFundToPortfolio: (id: number, fundCode: string, shares: number, costNav: number, purchaseDate?: string | null) =>
     request<unknown>(`/api/portfolio/${id}/funds`, {
       method: 'POST',
-      body: JSON.stringify({ fund_code: fundCode, shares, cost_nav: costNav }),
+      body: JSON.stringify({ fund_code: fundCode, shares, cost_nav: costNav, purchase_date: purchaseDate ?? null }),
     }),
 
   removeFundFromPortfolio: (id: number, fundCode: string) =>
     request<unknown>(`/api/portfolio/${id}/funds/${fundCode}`, { method: 'DELETE' }),
 
-  updateFundInPortfolio: (id: number, fundCode: string, shares: number, costNav: number) =>
+  updateFundInPortfolio: (id: number, fundCode: string, shares: number, costNav: number, purchaseDate?: string | null) =>
     request<unknown>(`/api/portfolio/${id}/funds/${fundCode}`, {
       method: 'PATCH',
-      body: JSON.stringify({ shares, cost_nav: costNav }),
+      body: JSON.stringify({ shares, cost_nav: costNav, purchase_date: purchaseDate ?? null }),
     }),
 
   setupFund: (code: string) => request<unknown>(`/api/fund/setup/${code}`, { method: 'POST' }),
