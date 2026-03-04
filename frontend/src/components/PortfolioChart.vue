@@ -2,11 +2,11 @@
 import { ref, watch, onMounted, onUnmounted, nextTick } from 'vue'
 import * as echarts from 'echarts/core'
 import { LineChart } from 'echarts/charts'
-import { GridComponent, TooltipComponent } from 'echarts/components'
+import { GridComponent, TooltipComponent, LegendComponent } from 'echarts/components'
 import { CanvasRenderer } from 'echarts/renderers'
 import { api } from '../api'
 
-echarts.use([LineChart, GridComponent, TooltipComponent, CanvasRenderer])
+echarts.use([LineChart, GridComponent, TooltipComponent, LegendComponent, CanvasRenderer])
 
 const props = defineProps<{ portfolioId: number }>()
 
@@ -33,7 +33,11 @@ async function loadData() {
   loading.value = true
   empty.value = false
   try {
-    const data = await api.getPortfolioHistory(props.portfolioId, activePeriod.value)
+    const [data, indexData] = await Promise.all([
+      api.getPortfolioHistory(props.portfolioId, activePeriod.value),
+      api.getIndexHistory(activePeriod.value),
+    ])
+
     if (data.dates.length === 0) {
       empty.value = true
       return
@@ -43,9 +47,31 @@ async function loadData() {
     initChart()
     if (!chart) return
 
+    // Align index to portfolio dates using carry-forward
+    const indexMap = new Map<string, number>()
+    for (let i = 0; i < indexData.dates.length; i++) {
+      indexMap.set(indexData.dates[i]!, indexData.values[i]!)
+    }
+
+    const hasIndex = indexData.dates.length > 0
+    const indexAligned: number[] = []
+    let lastIndexVal = hasIndex ? indexData.values[0]! : 0
+
+    for (const d of data.dates) {
+      if (indexMap.has(d)) {
+        lastIndexVal = indexMap.get(d)!
+      }
+      if (hasIndex) indexAligned.push(lastIndexVal)
+    }
+
+    // Normalize index to percentage change from first value
+    const indexBase = indexAligned[0] ?? 1
+    const indexPcts = indexAligned.map(v => indexBase !== 0 ? (v / indexBase - 1) * 100 : 0)
+
     const lastProfitPct = data.profit_pcts[data.profit_pcts.length - 1] ?? 0
     const lineColor = lastProfitPct >= 0 ? '#ff4444' : '#00c853'
     const areaColor = lastProfitPct >= 0 ? 'rgba(255,68,68,0.08)' : 'rgba(0,200,83,0.08)'
+    const indexColor = '#1677ff'
 
     chart.setOption({
       tooltip: {
@@ -56,12 +82,23 @@ async function loadData() {
           const val = data.values[i] ?? 0
           const pct = data.profit_pcts[i] ?? 0
           const sign = pct >= 0 ? '+' : ''
-          return `<div style="font-size:12px;color:#666;margin-bottom:4px">${d}</div>
-                  <div>组合市值: <b>${val.toFixed(2)}</b></div>
-                  <div>收益率: <b style="color:${lineColor}">${sign}${pct.toFixed(2)}%</b></div>`
+          let html = `<div style="font-size:12px;color:#666;margin-bottom:4px">${d}</div>`
+          html += `<div>组合市值: <b>${val.toFixed(2)}</b></div>`
+          html += `<div>组合收益: <b style="color:${lineColor}">${sign}${pct.toFixed(2)}%</b></div>`
+          if (hasIndex && indexPcts.length > 0) {
+            const ip = indexPcts[i] ?? 0
+            const isign = ip >= 0 ? '+' : ''
+            html += `<div style="color:${indexColor}">上证指数: ${isign}${ip.toFixed(2)}%</div>`
+          }
+          return html
         },
       },
-      grid: { left: 55, right: 16, top: 16, bottom: 40 },
+      legend: hasIndex ? {
+        data: ['组合收益率', '上证指数'],
+        top: 0,
+        textStyle: { fontSize: 12 },
+      } : { show: false },
+      grid: { left: 55, right: 16, top: hasIndex ? 28 : 16, bottom: 40 },
       xAxis: {
         type: 'category',
         data: data.dates,
@@ -74,15 +111,25 @@ async function loadData() {
         axisLabel: { fontSize: 11, color: '#999', formatter: '{value}%' },
         splitLine: { lineStyle: { color: '#f5f5f5' } },
       },
-      series: [{
-        name: '组合收益率',
-        type: 'line',
-        data: data.profit_pcts,
-        smooth: false,
-        symbol: 'none',
-        lineStyle: { color: lineColor, width: 2 },
-        areaStyle: { color: areaColor },
-      }],
+      series: [
+        {
+          name: '组合收益率',
+          type: 'line',
+          data: data.profit_pcts,
+          smooth: false,
+          symbol: 'none',
+          lineStyle: { color: lineColor, width: 2 },
+          areaStyle: { color: areaColor },
+        },
+        ...(hasIndex ? [{
+          name: '上证指数',
+          type: 'line',
+          data: indexPcts,
+          smooth: false,
+          symbol: 'none',
+          lineStyle: { color: indexColor, width: 1.5, type: 'dashed' },
+        }] : []),
+      ],
     }, true)
 
     chart.resize()
