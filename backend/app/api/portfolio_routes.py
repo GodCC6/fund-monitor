@@ -123,6 +123,7 @@ async def get_portfolio_detail(portfolio_id: int, db: AsyncSession = Depends(get
                 profit_pct=round(profit_pct, 4),
                 coverage=round(coverage, 4),
                 holdings_date=holdings_date,
+                added_at=pf.added_at,
             )
         )
 

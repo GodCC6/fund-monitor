@@ -54,6 +54,7 @@ export interface PortfolioFund {
   profit_pct: number
   coverage: number
   holdings_date: string | null
+  added_at: string | null
 }
 
 export interface PortfolioDetail {

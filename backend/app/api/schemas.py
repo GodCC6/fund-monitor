@@ -66,6 +66,7 @@ class PortfolioFundResponse(BaseModel):
     profit_pct: float
     coverage: float
     holdings_date: str | None = None
+    added_at: str | None = None
 
 
 class PortfolioDetailResponse(BaseModel):

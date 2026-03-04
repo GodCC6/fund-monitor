@@ -195,6 +195,34 @@ function formatMoney(val: number): string {
   return val.toFixed(2)
 }
 
+function calcCagr(costTotal: number, currentValue: number, addedAt: string | null): number | null {
+  if (!addedAt || costTotal <= 0 || currentValue <= 0) return null
+  const startDate = new Date(addedAt)
+  const now = new Date()
+  const years = (now.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24 * 365.25)
+  if (years < 1 / 365.25) return null // less than one day — not meaningful
+  const cagr = (Math.pow(currentValue / costTotal, 1 / years) - 1) * 100
+  return cagr
+}
+
+function formatCagr(val: number | null): string {
+  if (val === null) return '—'
+  const sign = val >= 0 ? '+' : ''
+  return `${sign}${val.toFixed(2)}%/年`
+}
+
+// CAGR for portfolio total: use earliest fund's added_at
+const portfolioCagr = computed(() => {
+  const funds = portfolio.value?.funds ?? []
+  if (funds.length === 0) return null
+  const earliest = funds.reduce<string | null>((min, f) => {
+    if (!f.added_at) return min
+    return min === null || f.added_at < min ? f.added_at : min
+  }, null)
+  if (!earliest || !portfolio.value) return null
+  return calcCagr(portfolio.value.total_cost, portfolio.value.total_estimate, earliest)
+})
+
 // Combined holdings
 const combinedHoldings = ref<CombinedHoldingsData | null>(null)
 const showCombined = ref(false)
@@ -274,6 +302,12 @@ onUnmounted(() => {
           {{ formatPct(portfolio.total_profit_pct) }}
         </span>
       </div>
+      <div class="summary-item">
+        <span class="label">年化收益率(CAGR)</span>
+        <span :class="portfolioCagr !== null ? pctClass(portfolioCagr) : ''">
+          {{ formatCagr(portfolioCagr) }}
+        </span>
+      </div>
     </div>
 
     <!-- Portfolio value history chart -->
@@ -324,6 +358,12 @@ onUnmounted(() => {
           <div class="fund-meta">
             <span>份额 {{ f.shares }}</span>
             <span>成本 {{ f.cost_nav.toFixed(4) }}</span>
+            <span
+              v-if="calcCagr(f.cost, f.current_value, f.added_at) !== null"
+              :class="pctClass(calcCagr(f.cost, f.current_value, f.added_at)!)"
+            >
+              CAGR {{ formatCagr(calcCagr(f.cost, f.current_value, f.added_at)) }}
+            </span>
             <span
               v-if="f.holdings_date"
               class="holdings-date"
