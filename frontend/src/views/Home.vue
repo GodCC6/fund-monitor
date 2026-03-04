@@ -49,7 +49,10 @@ onMounted(load)
 
 <template>
   <div class="home">
-    <h2>我的组合</h2>
+    <div class="top-bar">
+      <h2>我的组合</h2>
+      <button class="compare-link" @click="router.push('/compare')">基金对比</button>
+    </div>
 
     <div class="create-form">
       <input
@@ -85,6 +88,31 @@ onMounted(load)
 <style scoped>
 .home {
   padding-top: 8px;
+}
+
+.top-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 4px;
+}
+
+.top-bar h2 {
+  margin: 0;
+}
+
+.compare-link {
+  background: none;
+  border: 1px solid #1677ff;
+  color: #1677ff;
+  padding: 5px 14px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 13px;
+}
+
+.compare-link:hover {
+  background: #e8f4ff;
 }
 
 .create-form {
