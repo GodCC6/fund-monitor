@@ -1,6 +1,6 @@
 """Tests for scheduler retry logic with exponential backoff and AKShare health probe."""
 
-from unittest.mock import AsyncMock, MagicMock, call, patch
+from unittest.mock import AsyncMock, call, patch
 
 import pandas as pd
 import pytest
