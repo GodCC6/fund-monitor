@@ -223,6 +223,46 @@ const portfolioCagr = computed(() => {
   return calcCagr(portfolio.value.total_cost, portfolio.value.total_estimate, earliest)
 })
 
+// Edit fund position
+const editingFund = ref<string | null>(null)
+const editShares = ref<number | undefined>(undefined)
+const editCostNav = ref<number | undefined>(undefined)
+const editError = ref('')
+const editLoading = ref(false)
+
+function startEdit(f: { fund_code: string; shares: number; cost_nav: number }) {
+  editingFund.value = f.fund_code
+  editShares.value = f.shares
+  editCostNav.value = f.cost_nav
+  editError.value = ''
+}
+
+function cancelEdit() {
+  editingFund.value = null
+  editShares.value = undefined
+  editCostNav.value = undefined
+  editError.value = ''
+}
+
+async function saveEdit(fundCode: string) {
+  if (editLoading.value) return
+  if (!editShares.value || !editCostNav.value) {
+    editError.value = '请填写完整信息'
+    return
+  }
+  editLoading.value = true
+  editError.value = ''
+  try {
+    await api.updateFundInPortfolio(portfolioId.value, fundCode, editShares.value, editCostNav.value)
+    editingFund.value = null
+    await load()
+  } catch (e: unknown) {
+    editError.value = e instanceof Error ? e.message : '保存失败'
+  } finally {
+    editLoading.value = false
+  }
+}
+
 // Combined holdings
 const combinedHoldings = ref<CombinedHoldingsData | null>(null)
 const showCombined = ref(false)
@@ -334,7 +374,7 @@ onUnmounted(() => {
         >持仓收益率</button>
       </div>
       <div v-for="f in sortedFunds" :key="f.fund_code" class="fund-row">
-        <div class="fund-main" @click="router.push(`/fund/${f.fund_code}`)">
+        <div class="fund-main" @click="editingFund !== f.fund_code && router.push(`/fund/${f.fund_code}`)">
           <div class="fund-header">
             <span class="fund-name">{{ f.fund_name }}</span>
             <span class="fund-code-tag">{{ f.fund_code }}</span>
@@ -373,8 +413,25 @@ onUnmounted(() => {
               <span v-if="isHoldingsStale(f.holdings_date)">⚠</span>
             </span>
           </div>
+          <!-- Inline edit form for position update -->
+          <div v-if="editingFund === f.fund_code" class="edit-form" @click.stop>
+            <input v-model.number="editShares" placeholder="份额" type="number" step="0.01" />
+            <input v-model.number="editCostNav" placeholder="成本净值" type="number" step="0.0001" />
+            <p v-if="editError" class="error">{{ editError }}</p>
+            <div class="edit-form-actions">
+              <button @click.stop="saveEdit(f.fund_code)" :disabled="editLoading">
+                {{ editLoading ? '保存中...' : '保存' }}
+              </button>
+              <button class="cancel-btn" @click.stop="cancelEdit" :disabled="editLoading">取消</button>
+            </div>
+          </div>
         </div>
-        <button class="remove-btn" @click.stop="removeFund(f.fund_code)">删除</button>
+        <div class="fund-actions">
+          <button class="edit-btn" @click.stop="editingFund === f.fund_code ? cancelEdit() : startEdit(f)">
+            {{ editingFund === f.fund_code ? '×' : '编辑' }}
+          </button>
+          <button class="remove-btn" @click.stop="removeFund(f.fund_code)">删除</button>
+        </div>
       </div>
     </div>
 
@@ -617,6 +674,23 @@ onUnmounted(() => {
   color: #ff9800 !important;
 }
 
+.fund-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.edit-btn {
+  background: none;
+  border: 1px solid #1677ff;
+  color: #1677ff;
+  padding: 4px 12px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 12px;
+}
+
 .remove-btn {
   background: none;
   border: 1px solid #ff4444;
@@ -625,6 +699,44 @@ onUnmounted(() => {
   border-radius: 4px;
   cursor: pointer;
   font-size: 12px;
+}
+
+.edit-form {
+  margin-top: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.edit-form input {
+  padding: 6px 10px;
+  border: 1px solid #ccc;
+  border-radius: 6px;
+  font-size: 13px;
+}
+
+.edit-form-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.edit-form-actions button {
+  flex: 1;
+  padding: 6px;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 13px;
+}
+
+.edit-form-actions button:first-child {
+  background: #1a1a2e;
+  color: #fff;
+}
+
+.edit-form-actions button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
 }
 
 .add-section {

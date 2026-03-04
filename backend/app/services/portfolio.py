@@ -67,6 +67,28 @@ class PortfolioService:
         )
         return list(result.scalars().all())
 
+    async def update_fund(
+        self,
+        session: AsyncSession,
+        portfolio_id: int,
+        fund_code: str,
+        shares: float,
+        cost_nav: float,
+    ) -> PortfolioFund | None:
+        result = await session.execute(
+            select(PortfolioFund).where(
+                PortfolioFund.portfolio_id == portfolio_id,
+                PortfolioFund.fund_code == fund_code,
+            )
+        )
+        pf = result.scalar_one_or_none()
+        if pf is None:
+            return None
+        pf.shares = shares
+        pf.cost_nav = cost_nav
+        await session.commit()
+        return pf
+
     async def remove_fund(
         self, session: AsyncSession, portfolio_id: int, fund_code: str
     ) -> None:

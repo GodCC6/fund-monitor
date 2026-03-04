@@ -274,3 +274,81 @@ async def test_delete_portfolio_also_removes_funds(db_session):
         # Getting the deleted portfolio should return 404
         get_resp = await client.get(f"/api/portfolio/{pid}")
         assert get_resp.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_update_fund_position(db_session):
+    """PATCH updates shares and cost_nav for a fund in the portfolio."""
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        create_resp = await client.post("/api/portfolio", json={"name": "组合A"})
+        pid = create_resp.json()["id"]
+        await client.post(
+            f"/api/portfolio/{pid}/funds",
+            json={"fund_code": "000001", "shares": 1000.0, "cost_nav": 1.45},
+        )
+
+        resp = await client.patch(
+            f"/api/portfolio/{pid}/funds/000001",
+            json={"shares": 1500.0, "cost_nav": 1.50},
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["shares"] == 1500.0
+        assert data["cost_nav"] == 1.50
+
+
+@pytest.mark.asyncio
+async def test_update_fund_position_not_found(db_session):
+    """PATCH on a fund not in the portfolio returns 404."""
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        create_resp = await client.post("/api/portfolio", json={"name": "组合A"})
+        pid = create_resp.json()["id"]
+
+        resp = await client.patch(
+            f"/api/portfolio/{pid}/funds/999999",
+            json={"shares": 500.0, "cost_nav": 1.20},
+        )
+        assert resp.status_code == 404
+        assert resp.json()["detail"] == "Fund not found in portfolio"
+
+
+@pytest.mark.asyncio
+async def test_update_fund_position_invalid_shares(db_session):
+    """PATCH rejects shares <= 0."""
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        create_resp = await client.post("/api/portfolio", json={"name": "组合A"})
+        pid = create_resp.json()["id"]
+        await client.post(
+            f"/api/portfolio/{pid}/funds",
+            json={"fund_code": "000001", "shares": 1000.0, "cost_nav": 1.45},
+        )
+
+        resp = await client.patch(
+            f"/api/portfolio/{pid}/funds/000001",
+            json={"shares": 0, "cost_nav": 1.50},
+        )
+        assert resp.status_code == 400
+        assert resp.json()["detail"] == "shares must be greater than 0"
+
+
+@pytest.mark.asyncio
+async def test_update_fund_position_invalid_cost_nav(db_session):
+    """PATCH rejects cost_nav <= 0."""
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        create_resp = await client.post("/api/portfolio", json={"name": "组合A"})
+        pid = create_resp.json()["id"]
+        await client.post(
+            f"/api/portfolio/{pid}/funds",
+            json={"fund_code": "000001", "shares": 1000.0, "cost_nav": 1.45},
+        )
+
+        resp = await client.patch(
+            f"/api/portfolio/{pid}/funds/000001",
+            json={"shares": 1000.0, "cost_nav": -1.0},
+        )
+        assert resp.status_code == 400
+        assert resp.json()["detail"] == "cost_nav must be greater than 0"

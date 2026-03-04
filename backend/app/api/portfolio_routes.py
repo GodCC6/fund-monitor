@@ -12,6 +12,7 @@ from app.api.schemas import (
     PortfolioDetailResponse,
     PortfolioFundAddRequest,
     PortfolioFundResponse,
+    PortfolioFundUpdateRequest,
     PortfolioRenameRequest,
     PortfolioResponse,
 )
@@ -254,6 +255,24 @@ async def get_combined_holdings(portfolio_id: int, db: AsyncSession = Depends(ge
         "total_value": round(total_value, 2),
         "coverage": round(total_coverage, 4),
     }
+
+
+@router.patch("/{portfolio_id}/funds/{fund_code}")
+async def update_fund_in_portfolio(
+    portfolio_id: int,
+    fund_code: str,
+    req: PortfolioFundUpdateRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    """Update shares and cost_nav for a fund position (e.g. after dollar-cost averaging)."""
+    if req.shares <= 0:
+        raise HTTPException(status_code=400, detail="shares must be greater than 0")
+    if req.cost_nav <= 0:
+        raise HTTPException(status_code=400, detail="cost_nav must be greater than 0")
+    pf = await portfolio_service.update_fund(db, portfolio_id, fund_code, req.shares, req.cost_nav)
+    if pf is None:
+        raise HTTPException(status_code=404, detail="Fund not found in portfolio")
+    return {"status": "ok", "fund_code": pf.fund_code, "shares": pf.shares, "cost_nav": pf.cost_nav}
 
 
 @router.delete("/{portfolio_id}/funds/{fund_code}")

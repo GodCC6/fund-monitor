@@ -167,6 +167,12 @@ export const api = {
   removeFundFromPortfolio: (id: number, fundCode: string) =>
     request<unknown>(`/api/portfolio/${id}/funds/${fundCode}`, { method: 'DELETE' }),
 
+  updateFundInPortfolio: (id: number, fundCode: string, shares: number, costNav: number) =>
+    request<unknown>(`/api/portfolio/${id}/funds/${fundCode}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ shares, cost_nav: costNav }),
+    }),
+
   setupFund: (code: string) => request<unknown>(`/api/fund/setup/${code}`, { method: 'POST' }),
 
   searchFunds: (q: string) => request<FundSearchResult[]>(`/api/fund/search?q=${encodeURIComponent(q)}`),

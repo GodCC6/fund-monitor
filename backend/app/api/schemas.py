@@ -47,6 +47,11 @@ class PortfolioFundAddRequest(BaseModel):
     cost_nav: float
 
 
+class PortfolioFundUpdateRequest(BaseModel):
+    shares: float
+    cost_nav: float
+
+
 class PortfolioResponse(BaseModel):
     id: int
     name: str
