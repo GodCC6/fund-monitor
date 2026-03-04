@@ -259,6 +259,43 @@ async def refresh_all_fund_holdings():
         logger.error(f"Failed to refresh fund holdings: {e}")
 
 
+async def probe_akshare_health():
+    """Daily probe: test key AKShare endpoints and log warnings on failure.
+
+    Checks three representative APIs:
+    - fund_open_fund_info_em: NAV history (most critical, used for portfolio history)
+    - fund_portfolio_hold_em: Holdings data
+    - stock_zh_index_daily: Shanghai Index data (used for benchmark chart)
+    """
+    import akshare as ak
+
+    probes = [
+        ("fund_nav_history", lambda: ak.fund_open_fund_info_em(symbol="000001", indicator="单位净值走势")),
+        ("fund_holdings", lambda: ak.fund_portfolio_hold_em(symbol="000001", date="2024")),
+        ("index_daily", lambda: ak.stock_zh_index_daily(symbol="sh000001")),
+    ]
+
+    results = {}
+    for name, probe_fn in probes:
+        try:
+            df = await asyncio.to_thread(probe_fn)
+            ok = df is not None and not df.empty
+            results[name] = "ok" if ok else "empty"
+            if not ok:
+                logger.warning(f"AKShare health probe '{name}': returned empty result")
+        except Exception as e:
+            results[name] = "error"
+            logger.warning(f"AKShare health probe '{name}': FAILED — {e}")
+
+    degraded = [k for k, v in results.items() if v != "ok"]
+    if degraded:
+        logger.warning(f"AKShare health: {len(degraded)}/{len(probes)} probes degraded: {degraded}")
+    else:
+        logger.info(f"AKShare health: all {len(probes)} probes OK")
+
+    return results
+
+
 async def refresh_all_fund_navs():
     """After market close (20:30 weekdays), fetch official NAV for all tracked funds."""
     try:
@@ -302,6 +339,12 @@ def start_scheduler():
         refresh_all_fund_holdings,
         trigger=CronTrigger(hour=21, minute=0, day_of_week="mon-fri", timezone=_CST),
         id="refresh_all_fund_holdings",
+        replace_existing=True,
+    )
+    scheduler.add_job(
+        probe_akshare_health,
+        trigger=CronTrigger(hour=9, minute=0, timezone=_CST),
+        id="probe_akshare_health",
         replace_existing=True,
     )
     scheduler.start()

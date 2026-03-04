@@ -1,11 +1,15 @@
-"""Tests for scheduler retry logic with exponential backoff."""
+"""Tests for scheduler retry logic with exponential backoff and AKShare health probe."""
 
-from unittest.mock import AsyncMock, call, patch
+from unittest.mock import AsyncMock, MagicMock, call, patch
+
+import pandas as pd
+import pytest
 
 from app.tasks.scheduler import (
     _STOCK_FETCH_BASE_DELAY,
     _STOCK_FETCH_MAX_RETRIES,
     _fetch_quotes_with_retry,
+    probe_akshare_health,
 )
 
 STOCK_CODES = ["600519", "000858"]
@@ -95,3 +99,70 @@ class TestFetchQuotesWithRetry:
             result = await _fetch_quotes_with_retry([])
         assert result == {}
         mock_get.assert_not_called()
+
+
+class TestProbeAkshareHealth:
+    """Tests for the AKShare health monitoring probe."""
+
+    @pytest.fixture
+    def ok_df(self):
+        """A non-empty DataFrame simulating a healthy API response."""
+        return pd.DataFrame({"value": [1.0, 2.0]})
+
+    @pytest.fixture
+    def empty_df(self):
+        """An empty DataFrame simulating a degraded API response."""
+        return pd.DataFrame()
+
+    async def test_all_probes_ok_returns_ok_status(self, ok_df):
+        """When all three probes succeed, result maps each name to 'ok'."""
+        with patch("asyncio.to_thread", new_callable=AsyncMock, return_value=ok_df):
+            results = await probe_akshare_health()
+        assert results == {
+            "fund_nav_history": "ok",
+            "fund_holdings": "ok",
+            "index_daily": "ok",
+        }
+
+    async def test_empty_df_probe_returns_empty_status(self, ok_df, empty_df):
+        """When a probe returns an empty DataFrame it is reported as 'empty'."""
+        call_count = 0
+
+        async def side_effect(fn):
+            nonlocal call_count
+            call_count += 1
+            # First call (fund_nav_history) returns empty; rest return ok
+            return empty_df if call_count == 1 else ok_df
+
+        with patch("asyncio.to_thread", side_effect=side_effect):
+            results = await probe_akshare_health()
+
+        assert results["fund_nav_history"] == "empty"
+        assert results["fund_holdings"] == "ok"
+        assert results["index_daily"] == "ok"
+
+    async def test_exception_probe_returns_error_status(self, ok_df):
+        """When a probe raises an exception it is reported as 'error'."""
+        call_count = 0
+
+        async def side_effect(fn):
+            nonlocal call_count
+            call_count += 1
+            # Second call (fund_holdings) raises
+            if call_count == 2:
+                raise ConnectionError("network error")
+            return ok_df
+
+        with patch("asyncio.to_thread", side_effect=side_effect):
+            results = await probe_akshare_health()
+
+        assert results["fund_nav_history"] == "ok"
+        assert results["fund_holdings"] == "error"
+        assert results["index_daily"] == "ok"
+
+    async def test_all_probes_fail_all_reported_as_error(self):
+        """When all probes raise, all are reported as 'error'."""
+        with patch("asyncio.to_thread", new_callable=AsyncMock, side_effect=RuntimeError("down")):
+            results = await probe_akshare_health()
+        assert all(v == "error" for v in results.values())
+        assert len(results) == 3
