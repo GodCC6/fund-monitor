@@ -1,7 +1,7 @@
 # Fund Monitor — Product Roadmap
 
 > Last updated: 2026-03-04
-> Based on full codebase review at main @ `bb1cf3c` (all B1–B11, C1–C11 complete, 123 tests passing)
+> Based on full codebase review at main @ `fa4a9df` (all B1–B11, C1–C16 complete, 131 tests passing)
 
 ---
 
@@ -82,11 +82,11 @@
 
 | ID | Task | Effort | Files | Status |
 |----|------|--------|-------|--------|
-| C12 | Portfolio history benchmark overlay (CSI 300 / Shanghai Index on portfolio chart) | 3h | `portfolio_routes.py`, `PortfolioChart.vue`, `api/index.ts` | 📋 |
-| C13 | Annualized return (CAGR) display on portfolio and fund detail pages | 1h | `portfolio_routes.py`, `PortfolioDetail.vue` | 📋 |
-| C14 | Fund position edit — update `shares` and `cost_nav` after buy-in averaging | 2h | `portfolio_routes.py`, `PortfolioDetail.vue`, `api/index.ts` | 📋 |
-| C15 | AKShare health monitoring job — daily probe + warning log | 2h | `app/tasks/scheduler.py` | 📋 |
-| C16 | Fund comparison view — overlay two fund NAV curves | 4h | new `FundCompare.vue`, `chart.py`, `router/index.ts` | 📋 |
+| C12 | Portfolio history benchmark overlay (CSI 300 / Shanghai Index on portfolio chart) | 3h | `portfolio_routes.py`, `PortfolioChart.vue`, `api/index.ts` | ✅ |
+| C13 | Annualized return (CAGR) display on portfolio and fund detail pages | 1h | `portfolio_routes.py`, `PortfolioDetail.vue` | ✅ |
+| C14 | Fund position edit — update `shares` and `cost_nav` after buy-in averaging | 2h | `portfolio_routes.py`, `PortfolioDetail.vue`, `api/index.ts` | ✅ |
+| C15 | AKShare health monitoring job — daily probe + warning log | 2h | `app/tasks/scheduler.py` | ✅ |
+| C16 | Fund comparison view — overlay two fund NAV curves | 4h | new `FundCompare.vue`, `chart.py`, `router/index.ts` | ✅ |
 
 **C12 details:** `PortfolioChart.vue` shows only portfolio profit %; `NavChart.vue` already shows fund vs. index — the same pattern (fetch index history, align dates, render dual series) can be applied to the portfolio chart. Requires adding index data to the `/history` response or fetching it separately.
 
@@ -111,7 +111,7 @@
 
 - **Backend:** FastAPI + SQLite (aiosqlite) + AKShare + APScheduler
 - **Frontend:** Vue 3 Composition API + TypeScript, no UI library, ECharts for charts
-- **Tests:** pytest + pytest-asyncio, 118 tests — all new endpoints require tests; use in-memory SQLite via conftest.py
+- **Tests:** pytest + pytest-asyncio, 131 tests — all new endpoints require tests; use in-memory SQLite via conftest.py
 - **DB migrations:** Add tables in `models/`, auto-created via `Base.metadata.create_all` in `init_db()`
 - **A-share colour convention:** up = `#ff4444` (red), down = `#00c853` (green)
 - **Estimate badge:** all non-official NAVs must show the orange `估` badge
