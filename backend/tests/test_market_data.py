@@ -24,7 +24,11 @@ def _make_em_response(stocks: list[dict]) -> MagicMock:
         code = str(s["code"]).zfill(6)
         price = s["price"]
         prev_close = s["prev_close"]
-        change_pct = (price - prev_close) / prev_close * 100
+        # Handle zero prev_close (suspended stock) - East Money returns None for f3
+        if prev_close == 0 or price == 0:
+            change_pct = None
+        else:
+            change_pct = (price - prev_close) / prev_close * 100
         diff.append({
             "f2": price,
             "f3": change_pct,
