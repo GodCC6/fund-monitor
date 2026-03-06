@@ -49,6 +49,7 @@ interface ChartData {
   fundNavs: number[]
   indexValues: number[]
   indexName: string
+  indexPreClose?: number  // yesterday's close for 1d intraday; used as percentage base
 }
 
 async function loadData() {

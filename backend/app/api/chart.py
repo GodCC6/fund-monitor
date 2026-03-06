@@ -94,9 +94,19 @@ async def get_index_intraday():
             timeout=10,
         )
         data = resp.json()
-        raw_trends = (data.get("data") or {}).get("trends", [])
+        data_obj = data.get("data") or {}
+        raw_trends = data_obj.get("trends", [])
         if not raw_trends:
             return {"times": [], "values": [], "pre_close": 0, "name": "上证指数"}
+
+        # Extract yesterday's official close from the API response.
+        # The East Money trends2 API returns preClose (昨收价) at the top level of
+        # the data object.  This is the correct base for computing daily change %.
+        # Fall back to the first tick only when the field is missing.
+        try:
+            pre_close = float(data_obj.get("preClose") or data_obj.get("prePrice") or 0)
+        except (TypeError, ValueError):
+            pre_close = 0
 
         times = []
         values = []
@@ -116,7 +126,8 @@ async def get_index_intraday():
             times.append(t)
             values.append(val)
 
-        pre_close = values[0] if values else 0
+        if pre_close <= 0:
+            pre_close = values[0] if values else 0
     except Exception:
         return {"times": [], "values": [], "pre_close": 0, "name": "上证指数"}
 
