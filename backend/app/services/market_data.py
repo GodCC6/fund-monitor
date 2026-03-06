@@ -205,24 +205,85 @@ class MarketDataService:
                 continue
         return result
 
+    def _get_stock_quotes_via_eastmoney(
+        self, stock_codes: list[str]
+    ) -> dict[str, dict[str, Any]]:
+        """Fetch real-time quotes from East Money API (push2.eastmoney.com).
+
+        Uses the same API that powers the index quotes for consistency.
+        """
+        normalized = [str(c).zfill(6) for c in stock_codes]
+
+        # Build secids: 0.XXXXXX for Shanghai, 1.XXXXXX for Shenzhen
+        # Shanghai stocks start with 6, Shenzhen with 0, 3, or 0 (for 300xxx)
+        secids = []
+        for code in normalized:
+            if code.startswith('6'):
+                secids.append(f"1.{code}")  # Shanghai
+            else:
+                secids.append(f"0.{code}")  # Shenzhen
+
+        resp = requests.get(
+            "https://push2.eastmoney.com/api/qt/ulist.np/get",
+            params={
+                "fltt": "2",
+                "fields": "f2,f3,f4,f12,f13,f14",
+                "secids": ",".join(secids),
+                "_": str(int(time.time() * 1000)),
+            },
+            headers={
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+                "Referer": "https://quote.eastmoney.com/",
+            },
+            timeout=10,
+        )
+
+        data = resp.json()
+        result: dict[str, dict[str, Any]] = {}
+
+        diff = data.get("data", {}).get("diff", [])
+        for item in diff:
+            try:
+                code = item.get("f12", "")[-6:]  # Get last 6 digits
+                price = item.get("f2")
+                change_pct = item.get("f3")
+                name = item.get("f14")
+
+                if price is None or change_pct is None:
+                    continue
+
+                result[code] = {
+                    "price": float(price),
+                    "change_pct": float(change_pct),
+                    "name": name or "",
+                }
+            except (ValueError, TypeError, KeyError):
+                continue
+
+        return result
+
     def get_stock_quotes(self, stock_codes: list[str]) -> dict[str, dict[str, Any]]:
         """Get real-time quotes for a list of stock codes.
 
-        Tries Sina Finance first, falls back to Tencent Finance.
+        Tries East Money first (same source as index), falls back to Sina then Tencent.
         Returns dict mapping stock_code -> {price, change_pct, name}.
         Keys are always 6-digit zero-padded pure numeric strings.
         """
         if not stock_codes:
             return {}
         try:
-            return self._get_stock_quotes_via_sina(stock_codes)
+            return self._get_stock_quotes_via_eastmoney(stock_codes)
         except Exception as e:
-            logger.warning(f"Sina Finance stock quotes failed ({e}), trying Tencent")
+            logger.warning(f"East Money stock quotes failed ({e}), trying Sina")
             try:
-                return self._get_stock_quotes_via_tencent(stock_codes)
+                return self._get_stock_quotes_via_sina(stock_codes)
             except Exception as e2:
-                logger.error(f"Tencent Finance fallback also failed: {e2}", exc_info=True)
-                return {}
+                logger.warning(f"Sina Finance stock quotes failed ({e2}), trying Tencent")
+                try:
+                    return self._get_stock_quotes_via_tencent(stock_codes)
+                except Exception as e3:
+                    logger.error(f"All stock quote sources failed: {e3}", exc_info=True)
+                    return {}
 
     @staticmethod
     def _quarter_label_to_date(label: str) -> str | None:
