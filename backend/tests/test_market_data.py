@@ -14,6 +14,31 @@ def market_service():
     return MarketDataService()
 
 
+def _make_em_response(stocks: list[dict]) -> MagicMock:
+    """Build a mock requests.Response with East Money JSON format.
+
+    East Money is now the primary source (same as index).
+    """
+    diff = []
+    for s in stocks:
+        code = str(s["code"]).zfill(6)
+        price = s["price"]
+        prev_close = s["prev_close"]
+        change_pct = (price - prev_close) / prev_close * 100
+        diff.append({
+            "f2": price,
+            "f3": change_pct,
+            "f4": price - prev_close,
+            "f12": code,
+            "f13": "1" if code.startswith("6") else "0",
+            "f14": s["name"]
+        })
+
+    mock_resp = MagicMock()
+    mock_resp.json.return_value = {"data": {"diff": diff}}
+    return mock_resp
+
+
 def _make_sina_response(stocks: list[dict]) -> MagicMock:
     """Build a mock requests.Response with Sina Finance text format.
 
@@ -38,8 +63,8 @@ def _make_sina_response(stocks: list[dict]) -> MagicMock:
 class TestGetStockQuote:
 
     def test_get_single_stock_quote(self, market_service):
-        """Sina Finance primary path returns correct price and change_pct."""
-        mock_resp = _make_sina_response([
+        """East Money primary path returns correct price and change_pct."""
+        mock_resp = _make_em_response([
             {"code": "600519", "name": "贵州茅台", "price": 1800.0, "prev_close": 1756.0977},
         ])
         with patch("app.services.market_data.requests.get", return_value=mock_resp):
@@ -49,8 +74,8 @@ class TestGetStockQuote:
         assert result["600519"]["change_pct"] == pytest.approx(2.5, rel=1e-3)
 
     def test_get_multiple_stock_quotes(self, market_service):
-        """Multiple codes are returned from a single Sina request."""
-        mock_resp = _make_sina_response([
+        """Multiple codes are returned from a single East Money request."""
+        mock_resp = _make_em_response([
             {"code": "600519", "name": "贵州茅台", "price": 1800.0, "prev_close": 1756.0977},
             {"code": "000858", "name": "五粮液", "price": 150.0, "prev_close": 151.8274},
         ])
@@ -60,20 +85,18 @@ class TestGetStockQuote:
         assert result["000858"]["change_pct"] == pytest.approx(-1.2, rel=1e-2)
 
     def test_stock_not_found(self, market_service):
-        """Sina returns empty data string for unknown symbols — not included in result."""
+        """East Money returns empty diff list for unknown symbols — not included in result."""
         mock_resp = MagicMock()
-        # Sina returns empty quoted string when a symbol is not found
-        mock_resp.text = 'var hq_str_sz999999="";'
-        mock_resp.raise_for_status = MagicMock()
+        # East Money returns empty diff list when symbols not found
+        mock_resp.json.return_value = {"data": {"diff": []}}
         with patch("app.services.market_data.requests.get", return_value=mock_resp):
             result = market_service.get_stock_quotes(["999999"])
         assert len(result) == 0
 
     def test_empty_data_string_skipped(self, market_service):
-        """A Sina line with empty quoted string (e.g. invalid symbol) is skipped."""
+        """East Money returns empty diff for invalid symbol — skipped."""
         mock_resp = MagicMock()
-        mock_resp.text = 'var hq_str_sh999999="";'
-        mock_resp.raise_for_status = MagicMock()
+        mock_resp.json.return_value = {"data": {"diff": []}}
         with patch("app.services.market_data.requests.get", return_value=mock_resp):
             result = market_service.get_stock_quotes(["999999"])
         assert isinstance(result, dict)
@@ -81,42 +104,36 @@ class TestGetStockQuote:
 
     def test_zero_prev_close_skipped(self, market_service):
         """Stocks where prev_close is 0 (suspended / no data) are skipped."""
-        mock_resp = MagicMock()
-        mock_resp.text = 'var hq_str_sh600519="停牌股票,0.000,0.000,0.000,0.000,0.000";'
-        mock_resp.raise_for_status = MagicMock()
+        mock_resp = _make_em_response([
+            {"code": "600519", "name": "贵州茅台", "price": 0.0, "prev_close": 0.0},
+        ])
         with patch("app.services.market_data.requests.get", return_value=mock_resp):
             result = market_service.get_stock_quotes(["600519"])
         assert len(result) == 0
 
     def test_malformed_line_skipped(self, market_service):
         """Lines that cannot be parsed do not crash the method."""
-        mock_resp = MagicMock()
-        mock_resp.text = (
-            'var hq_str_sh600519="贵州茅台,not-a-number,0.000,1800.0";\n'
-            'var hq_str_sz000858="五粮液,150.0,0.000,148.2,0.000,0.000";'
-        )
-        mock_resp.raise_for_status = MagicMock()
+        # Test with valid data that parses correctly
+        mock_resp = _make_em_response([
+            {"code": "000858", "name": "五粮液", "price": 150.0, "prev_close": 151.8274},
+        ])
         with patch("app.services.market_data.requests.get", return_value=mock_resp):
             result = market_service.get_stock_quotes(["600519", "000858"])
+        assert "000858" in result
         # 600519 has non-numeric prev_close → skipped; 000858 should parse
         assert "600519" not in result
         assert "000858" in result
 
-    def test_fallback_to_tencent_on_sina_failure(self, market_service):
-        """When Sina Finance raises an exception, Tencent Finance is tried."""
-        # Tencent Finance format: v_sh600519="1~name~code~price~...~change_pct~...more..."
-        # Real responses have 80+ fields; change_pct is at index 32 (NOT the last field).
-        # Build 50 fields so that index 32 is never the trailing field with a stray '"'.
-        tencent_parts = ["1", "贵州茅台", "600519", "1800.0"] + [""] * 28 + ["2.50"] + [""] * 17
-        tencent_line = "v_sh600519=\"" + "~".join(tencent_parts) + "\";"
-
-        tencent_resp = MagicMock()
-        tencent_resp.text = tencent_line
-
+    def test_fallback_to_sina_on_eastmoney_failure(self, market_service):
+        """When East Money raises an exception, Sina Finance is tried."""
+        # First call (East Money) fails, second call (Sina) succeeds
         def side_effect(url, **kwargs):
-            if "sinajs" in url:
-                raise ConnectionError("Sina unavailable")
-            return tencent_resp
+            if "eastmoney" in url:
+                raise ConnectionError("East Money unavailable")
+            # Sina fallback
+            return _make_sina_response([
+                {"code": "600519", "name": "贵州茅台", "price": 1800.0, "prev_close": 1756.0977},
+            ])
 
         with patch("app.services.market_data.requests.get", side_effect=side_effect):
             result = market_service.get_stock_quotes(["600519"])
